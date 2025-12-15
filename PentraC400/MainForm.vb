@@ -5,6 +5,7 @@ Imports System.IO
 Imports System.IO.Ports
 Imports System.Text
 Imports System.Threading
+Imports System.Timers
 Imports System.Xml
 
 Imports Bluegrams.Application
@@ -76,12 +77,14 @@ Public Class MainForm
     Dim ACKReceived As Char = ""
 
     Dim TimedOut As Integer
+    Dim connectionCheckerTimer As New Timers.Timer()
     'END
 
-    'Write to TraceComm.log FIle
+    'Write to TraceComm.log and Error.Log FIle
     Dim CommLog As FileStream
     Dim CommWriter As StreamWriter
     Dim TraceComm As String = "TraceComm.log"
+    Dim ErrorComm As String = "Error.log"
     'END
 
     'Write to ConnectionString.log File
@@ -182,6 +185,9 @@ Public Class MainForm
     Private Sub frmSystemTray_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
         lblVersion.Text = FileVersionInfo.GetVersionInfo(Application.ExecutablePath).FileVersion
 
+        'List down all available port
+        GetComPorts()
+
         Dim path As String = Application.StartupPath & "\" & Settings
         ' This text is added only once to the file.
         If File.Exists(path) = True Then
@@ -192,8 +198,6 @@ Public Class MainForm
 
     Private Sub LoadAllSettings()
         Try
-            'List down all available port
-            GetComPorts()
 
             'Retrieve saved settings for default use
             With My.Settings
@@ -239,6 +243,15 @@ Public Class MainForm
 
                 'Create text file for TraceComm.log
                 CreateFile(TraceComm, ComPortsBox.Text)
+
+                'Create text file for ErrorComm.log
+                CreateFile(ErrorComm, ComPortsBox.Text)
+
+                'Timer to check the Port Connection
+                connectionCheckerTimer.Interval = 1000
+                AddHandler connectionCheckerTimer.Elapsed, AddressOf connectionCheckerTimer_Elapsed
+
+                connectionCheckerTimer.Start()
 
                 'Check if Registry Setting Exist
                 If My.Computer.Registry.GetValue("HKEY_CURRENT_USER\Software\KeyString\CS 1.0.0", "ConnectionString", Nothing) Is Nothing Then
@@ -685,17 +698,45 @@ Public Class MainForm
         End Try
     End Sub
 
+    Private Sub connectionCheckerTimer_Elapsed(sender As Object, e As ElapsedEventArgs)
+        Try
+            If Port.IsOpen = False Then
+                Port.Open()
+                Me.Invoke(Sub() lblConnection.Text = "Connection Status: Connected")
+                ErrorLog("Port Connection Restored")
+            End If
+        Catch ex As Exception
+            Port.Close()
+            Me.Invoke(Sub() lblConnection.Text = "Connection Status: Disconnected")
+            ErrorLog("Port Disconnected")
+        End Try
+    End Sub
+
+    Private Sub ErrorLog(ByVal logTxt As String)
+
+        'Write file to Error.Log
+        CommLog = New FileStream(ErrorComm, FileMode.Append, FileAccess.Write)
+        CommWriter = New StreamWriter(CommLog)
+        CommWriter.WriteLine(System.DateTime.Now & " [Error] : " & logTxt)
+        CommWriter.Close()
+        CommLog.Close()
+    End Sub
+
     'Start reading from CommPort
     Private Sub tmConnect_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tmConnect.Tick
         Try
+            '    If Port.IsOpen Then
+            '        ReadENQData()
+            '        TimedOut = 0
+            '    Else
+            '        Port.Open()
+            '        ReadENQData()
+            '        TimedOut = 0
+            '    End If
             If Port.IsOpen Then
                 ReadENQData()
-                TimedOut = 0
-            Else
-                Port.Open()
-                ReadENQData()
-                TimedOut = 0
             End If
+
         Catch ex As Exception
             'MessageBox.Show(ex.Message, "System", MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
             'Exit Sub
@@ -708,6 +749,10 @@ Public Class MainForm
             '        ReadENQData()
             '        TimedOut = 0
             '    End If
+            ErrorLog(ex.ToString & vbNewLine)
+            connectionCheckerTimer.Stop()
+            connectionCheckerTimer.Start()
+            TimedOut = 0
         End Try
     End Sub
 
@@ -1180,7 +1225,7 @@ Public Class MainForm
 
         Connect()
         rs.Connection = conn
-        rs.CommandText = "SELECT `tmpWorklist`.`sample_id`, `tmpWorklist`.`patient_id`, `tmpWorklist`.`patient_name`, `tmpWorklist`.`sex`, `tmpWorklist`.`bdate`, `patient_order`.`mode`,`tmpWorklist`.`testtype`,`tmpWorklist`.`sub_section` FROM `tmpWorklist`, `patient_order` WHERE `tmpWorklist`.`sample_id` = @SampleID AND `patient_order`.`sample_id` = @SampleID LIMIT 1"
+        rs.CommandText = "SELECT `tmpWorklist`.`sample_id`, `tmpWorklist`.`patient_id`, `tmpWorklist`.`patient_name`, `tmpWorklist`.`sex`, `tmpWorklist`.`bdate`, `patient_order`.`mode`,`tmpWorklist`.`testtype`,`tmpWorklist`.`sub_section` FROM `tmpWorklist`, `patient_order` WHERE `tmpWorklist`.`sample_id` = @SampleID AND `patient_order`.`sample_id` = @SampleID AND `tmpWorklist`.`status` IN ('Processing', 'Result Received') LIMIT 1"
         reader = rs.ExecuteReader
         reader.Read()
         If reader.HasRows Then
