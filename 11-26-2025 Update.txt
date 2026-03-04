@@ -1,8 +1,0 @@
-
-
-
-Pentra C400 Update November 26, 2025
-
-1. Added Reconnection
-2. Added Error Logs for disconnection and reconnection
-3. Added Checking of status machine inquiry sample ID in QueryProcess

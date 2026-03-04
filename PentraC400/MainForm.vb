@@ -9,6 +9,7 @@ Imports System.Timers
 Imports System.Xml
 
 Imports Bluegrams.Application
+Imports MySql.Data.MySqlClient
 
 Public Class MainForm
 
@@ -95,8 +96,21 @@ Public Class MainForm
     Dim Settings As String = "Settings.config"
     Dim SettingsContent As String = ""
     'END
+    Public Const WM_RESTORE_FROM_TRAY As Integer = &H8001
 #End Region
+    Protected Overrides Sub WndProc(ByRef m As System.Windows.Forms.Message)
+        If m.Msg = WM_RESTORE_FROM_TRAY Then
+            RestoreFromTray()
+        End If
+        MyBase.WndProc(m)
+    End Sub
 
+    Private Sub RestoreFromTray()
+        Me.WindowState = FormWindowState.Normal
+        Me.Show()
+        ShowInTaskbar = True
+        NotifyIcon1.Visible = False
+    End Sub
     Private Sub GetMachineSettings()
         Dim path As String = Application.StartupPath & "\" & Settings
         Dim reader = File.OpenText(path)
@@ -110,15 +124,23 @@ Public Class MainForm
     End Sub
     Private saveSettings As Boolean = False
     Private Sub SaveMachineSettings()
-        CommLog = New FileStream(Settings, FileMode.Create, FileAccess.Write)
-        CommWriter = New StreamWriter(CommLog)
-        CommWriter.WriteLine(txtMachine.Text & "_" & txtSerial.Text)
-        CommWriter.Close()
-        CommLog.Close()
+        Using CommLog As New FileStream(ErrorComm, FileMode.Append, FileAccess.Write)
+            Using CommWriter As New StreamWriter(CommLog)
+                CommWriter.WriteLine(txtMachine.Text & "_" & txtSerial.Text)
+            End Using
+        End Using
         saveSettings = True
-
         SettingsContent = txtMachine.Text & "_" & txtSerial.Text
         LoadSettings()
+        'CommLog = New FileStream(Settings, FileMode.Create, FileAccess.Write)
+        'CommWriter = New StreamWriter(CommLog)
+        'CommWriter.WriteLine(txtMachine.Text & "_" & txtSerial.Text)
+        'CommWriter.Close()
+        'CommLog.Close()
+        'saveSettings = True
+
+        'SettingsContent = txtMachine.Text & "_" & txtSerial.Text
+        'LoadSettings()
     End Sub
 
     'Create PortableSettings
@@ -149,16 +171,24 @@ Public Class MainForm
     End Sub
 
     'Method for Creating Communication File
+
     Public Sub CreateFile(ByVal file As String, ByVal port As String)
-        CommLog = New FileStream(file, FileMode.Append, FileAccess.Write)
-        CommWriter = New StreamWriter(CommLog)
+        Using CommLog As New FileStream(file, FileMode.Append, FileAccess.Write)
+            Using CommWriter As New StreamWriter(CommLog)
+                CommWriter.WriteLine("Date Opened: " + System.DateTime.Now.ToString())
+                CommWriter.WriteLine("Port: " + port)
+                CommWriter.WriteLine("Machine: " + Instrument + vbNewLine)
+            End Using
+        End Using
+        'CommLog = New FileStream(file, FileMode.Append, FileAccess.Write)
+        'CommWriter = New StreamWriter(CommLog)
 
-        CommWriter.WriteLine("Date Opened: " + System.DateTime.Now.ToString())
-        CommWriter.WriteLine("Port: " + port)
-        CommWriter.WriteLine("Machine: " + Instrument + vbNewLine)
+        'CommWriter.WriteLine("Date Opened: " + System.DateTime.Now.ToString())
+        'CommWriter.WriteLine("Port: " + port)
+        'CommWriter.WriteLine("Machine: " + Instrument + vbNewLine)
 
-        CommWriter.Close()
-        CommLog.Close()
+        'CommWriter.Close()
+        'CommLog.Close()
     End Sub
 
     'Method for Creating ConnectionString Log File
@@ -233,6 +263,7 @@ Public Class MainForm
                 Else
                     chkReceiving.CheckState = CheckState.Unchecked
                 End If
+                Me.Text = "Analyzer Driver " & .Machine.ToUpper & "(" & .COMPort & ")"
 
                 'Set ComPort Settings
                 Port.PortName = ComPortsBox.Text
@@ -262,27 +293,48 @@ Public Class MainForm
                     '#########################################################################################################################################################
 
                     'Update Machine Status
-                    conn.ConnectionString = TXTConnectionString
-                    conn.Open()
-                    rs.Connection = conn
-                    rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-                    reader = rs.ExecuteReader
-                    reader.Read()
-                    If reader.HasRows Then
-                        conn.Close()
-                        conn.ConnectionString = TXTConnectionString
+                    Using conn As New MySqlConnection(My.Settings.ConnectionString)
                         conn.Open()
-                        rs.Connection = conn
-                        rs.CommandText = "UPDATE `machines` SET `status` = 'Connected' WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-                        rs.ExecuteNonQuery()
-                        conn.Close()
-                    End If
-                    conn.Close()
+                        Dim hasrow As Object
+                        Using cmd As New MySqlCommand()
+                            cmd.Connection = conn
+                            cmd.CommandText = "SELECT * FROM `machines` WHERE `name` = @name AND `serial_no` = @serial"
+                            cmd.CommandType = CommandType.Text
+                            cmd.Parameters.AddWithValue("@name", txtMachine.Text)
+                            cmd.Parameters.AddWithValue("@serial", txtSerial.Text)
+                            hasrow = cmd.ExecuteScalar()
+                        End Using
+
+                        If hasrow IsNot DBNull.Value Then
+                            Using cmd As New MySqlCommand()
+                                cmd.Connection = conn
+                                cmd.CommandText = "UPDATE `machines` SET `status` = 'Connected' WHERE `name` = @name AND `serial_no` = @serial"
+                                cmd.CommandType = CommandType.Text
+                                cmd.Parameters.AddWithValue("@name", txtMachine.Text)
+                                cmd.Parameters.AddWithValue("@serial", txtSerial.Text)
+                                cmd.ExecuteNonQuery()
+                            End Using
+                        End If
+                    End Using
+                    'conn.ConnectionString = TXTConnectionString
+                    'conn.Open()
+                    'rs.Connection = conn
+                    'rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+                    'reader = rs.ExecuteReader
+                    'reader.Read()
+                    'If reader.HasRows Then
+                    '    conn.Close()
+                    '    conn.ConnectionString = TXTConnectionString
+                    '    conn.Open()
+                    '    rs.Connection = conn
+                    '    rs.CommandText = "UPDATE `machines` SET `status` = 'Connected' WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+                    '    rs.ExecuteNonQuery()
+                    '    conn.Close()
+                    'End If
+                    'conn.Close()
                     '############################################################################################################################################################
                 End If
                 '###############################################################################################################################################################
-                Me.Text = "Analyzer Driver " & .Machine & "(" & .COMPort & ")"
-
 
             End With
 
@@ -320,90 +372,178 @@ Public Class MainForm
     End Sub
 
     Private Sub IdentifyOrder(ByVal OrderID As String, ByVal PatientID As String, ByVal PatientName As String, ByVal Instrument As String, ByVal SerialNo As String, ByVal MainID As String, ByVal PatientGender As String, ByVal PatientBirthDate As String)
-        rs.Parameters.Clear()
-        rs.Parameters.AddWithValue("@sample_id", OrderID)
-        rs.Parameters.AddWithValue("@mainID", OrderID)
+        Dim result As Object
+        Using conn As New MySqlConnection(My.Settings.ConnectionString)
+            conn.Open()
+            Using cmd As New MySqlCommand("SELECT `ctrl_id` FROM `control_setting` WHERE `ctrl_id` LIKE @sample_id", conn)
+                cmd.Parameters.AddWithValue("@sample_id", OrderID)
+                result = cmd.ExecuteScalar()
+            End Using
+        End Using
 
-        Connect()
-        rs.Connection = conn
-        rs.CommandText = "mple"
-        reader = rs.ExecuteReader
-        reader.Read()
-        If reader.HasRows Then
-            Disconnect()
-        Else
-            Disconnect()
+        If result Is Nothing OrElse IsDBNull(result) Then
+            ' NOT in control_settings
             DisplayOrder(OrderID, PatientID, PatientName, Instrument, SerialNo, MainID, PatientGender, PatientBirthDate)
+        Else
+            ' IN control_settings
         End If
-        Disconnect()
+
+        'rs.Parameters.Clear()
+        'rs.Parameters.AddWithValue("@sample_id", OrderID)
+        'rs.Parameters.AddWithValue("@mainID", OrderID)
+
+        'Connect()
+        'rs.Connection = conn
+        'rs.CommandText = "mple"
+        'reader = rs.ExecuteReader
+        'reader.Read()
+        'If reader.HasRows Then
+        '    Disconnect()
+        'Else
+        '    Disconnect()
+        '    DisplayOrder(OrderID, PatientID, PatientName, Instrument, SerialNo, MainID, PatientGender, PatientBirthDate)
+        'End If
+        'Disconnect()
     End Sub
 
     Private Sub DisplayOrder(ByVal OrderID As String, ByVal PatientID As String, ByVal PatientName As String, ByVal Instrument As String, ByVal SerialNo As String, ByVal MainID As String, ByVal PatientGender As String, ByVal PatientBirthDate As String)
-        'LoadSampleID()
 
-        rs.Parameters.Clear()
-        rs.Parameters.AddWithValue("@sampleid", OrderID)
-        rs.Parameters.AddWithValue("@mainid", MainID)
-        rs.Parameters.AddWithValue("@patient_id", PatientID)
-        rs.Parameters.AddWithValue("@name", PatientName)
-        rs.Parameters.AddWithValue("@sex", PatientGender)
-        rs.Parameters.AddWithValue("@bdate", PatientBirthDate)
-        rs.Parameters.AddWithValue("@date", Now)
-        rs.Parameters.AddWithValue("@time", Now.ToLongTimeString())
-        rs.Parameters.AddWithValue("@status", "Result Received")
-        rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
-        rs.Parameters.AddWithValue("@section", Section)
-        rs.Parameters.AddWithValue("@sub_section", SubSection)
-        rs.Parameters.AddWithValue("@location", cboLocation.Text)
-        rs.Parameters.AddWithValue("@time_checked_in", Now)
+        Using conn As New MySqlConnection(My.Settings.ConnectionString)
+            conn.Open()
+            Using trans As MySqlTransaction = conn.BeginTransaction()
+                Try
+                    If My.Settings.ReceivingStatus = 1 Then
+                        Dim result As Object
+                        Using cmd1 As New MySqlCommand("SELECT `main_id` FROM `tmpWorklist` WHERE `main_id` = @mainid", conn, trans)
+                            cmd1.Parameters.AddWithValue("@mainid", MainID)
+                            result = cmd1.ExecuteScalar()
+                        End Using
 
-        If My.Settings.ReceivingStatus = 1 Then
-            'Save Order to Worklist
-            Connect()
-            rs.Connection = conn
-            rs.CommandText = "SELECT `main_id` FROM `tmpWorklist` WHERE `main_id` = @mainid"
-            reader = rs.ExecuteReader
-            reader.Read()
-            If reader.HasRows Then
-                Disconnect()
-                'Update Worklist
-                UpdateRecordwthoutMSG("UPDATE `tmpWorklist` SET `status` = @status, `instrument` = @instrument WHERE main_id = @mainid AND `testtype` = @section AND `status` IN ('Processing','Checked-In') AND `sub_section` = @sub_section;")
-            Else
-                Disconnect()
-                'Save Order to Worklist
-                SaveRecordwthoutMSG("INSERT INTO `tmpWorklist` (`sample_id`, `patient_id`, `patient_name`, `sex`, `bdate`, `status`, `date`, `time`, `main_id`, `instrument`, `testtype`, `sub_section`, `location`) VALUES " _
-                        & "(" _
-                        & "@sampleid," _
-                        & "@patient_id," _
-                        & "@name," _
-                        & "@sex," _
-                        & "@bdate," _
-                        & "@status," _
-                        & "@date," _
-                        & "@time," _
-                        & "@mainid," _
-                        & "@instrument," _
-                        & "@section," _
-                        & "@sub_section," _
-                        & "@location" _
-                        & ")"
-                        )
+                        If result Is Nothing OrElse IsDBNull(result) Then
+                            'Insert in tmpworklist
+                            Using cmd1 As New MySqlCommand("INSERT INTO `tmpWorklist` (`sample_id`, `patient_id`, `patient_name`, `sex`, `bdate`, `status`, `date`, `time`, `main_id`, `instrument`, `testtype`, `location`,`sub_section`) VALUES " _
+                                                   & "(@sampleid, @patient_id, @name, @sex, @bdate, @status, @date, @time, @mainid, @instrument, @section, @location, @sub_section)", conn, trans)
+                                cmd1.Parameters.AddWithValue("@sampleid", OrderID)
+                                cmd1.Parameters.AddWithValue("@patient_id", PatientID)
+                                cmd1.Parameters.AddWithValue("@name", PatientName)
+                                cmd1.Parameters.AddWithValue("@sex", PatientGender)
+                                cmd1.Parameters.AddWithValue("@bdate", PatientBirthDate)
+                                cmd1.Parameters.AddWithValue("@status", "Result Received")
+                                cmd1.Parameters.AddWithValue("@date", Now)
+                                cmd1.Parameters.AddWithValue("@time", Now.ToLongTimeString())
+                                cmd1.Parameters.AddWithValue("@mainid", MainID)
+                                cmd1.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                                cmd1.Parameters.AddWithValue("@location", cboLocation.Text)
+                                cmd1.Parameters.AddWithValue("@section", Section)
+                                cmd1.Parameters.AddWithValue("@sub_section", SubSection)
+                                cmd1.ExecuteNonQuery()
+                            End Using
+                            'Insert in specimen_tracking
+                            Using cmd1 As New MySqlCommand("INSERT INTO `specimen_tracking` (`sample_id`, `received`, `extracted`, `section`, `sub_section`) VALUES " _
+                                                    & "(@mainid, @time_checked_in, @time_checked_in, @section, @sub_section)", conn, trans)
+                                cmd1.Parameters.AddWithValue("@mainid", MainID)
+                                cmd1.Parameters.AddWithValue("@time_checked_in", Now)
+                                cmd1.Parameters.AddWithValue("@section", Section)
+                                cmd1.Parameters.AddWithValue("@sub_section", SubSection)
+                                cmd1.ExecuteNonQuery()
+                            End Using
+                        Else
+                            'Update tmpworklist
+                            Using cmd1 As New MySqlCommand("UPDATE `tmpWorklist` SET `status` = @status, `instrument` = @instrument WHERE main_id = @mainid and testtype = @section AND sub_section = @sub_section", conn, trans)
+                                cmd1.Parameters.AddWithValue("@status", "Result Received")
+                                cmd1.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                                cmd1.Parameters.AddWithValue("@mainid", MainID)
+                                cmd1.Parameters.AddWithValue("@section", Section)
+                                cmd1.Parameters.AddWithValue("@sub_section", SubSection)
+                                cmd1.ExecuteNonQuery()
+                            End Using
+                        End If
+                    Else
+                        'ReceivingStatus = 0
+                        Using cmd1 As New MySqlCommand("UPDATE `tmpWorklist` SET `status` = @status, `instrument` = @instrument WHERE main_id = @mainid AND testtype = @section AND `sub_section` = @sub_section AND `status` IN('Processing', 'Result Received')", conn, trans)
+                            cmd1.Parameters.AddWithValue("@status", "Result Received")
+                            cmd1.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                            cmd1.Parameters.AddWithValue("@mainid", MainID)
+                            cmd1.Parameters.AddWithValue("@section", Section)
+                            cmd1.Parameters.AddWithValue("@sub_section", SubSection)
+                            cmd1.ExecuteNonQuery()
+                        End Using
+                    End If
 
-                SaveRecordwthoutMSG("INSERT INTO `specimen_tracking` (`sample_id`, `received`, `extracted`, `section`, `sub_section`) VALUES " _
-                        & "(" _
-                        & "@mainid," _
-                        & "@time_checked_in," _
-                        & "@time_checked_in," _
-                        & "@section," _
-                        & "@sub_section" _
-                        & ")"
-                        )
-            End If
-            Disconnect()
-        Else
-            Disconnect()
-            UpdateRecordwthoutMSG("UPDATE `tmpWorklist` SET `status` = @status, `instrument` = @instrument WHERE main_id = @mainid AND `testtype` = @section AND `sub_section` = @sub_section;")
-        End If
+                    trans.Commit()
+                Catch ex As Exception
+                    trans.Rollback()
+                    ErrorLog(ex.ToString)
+                    MessageBox.Show(ex.Message, "Error Updating Worklist", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                End Try
+            End Using
+        End Using
+
+        ''LoadSampleID()
+
+        'rs.Parameters.Clear()
+        'rs.Parameters.AddWithValue("@sampleid", OrderID)
+        'rs.Parameters.AddWithValue("@mainid", MainID)
+        'rs.Parameters.AddWithValue("@patient_id", PatientID)
+        'rs.Parameters.AddWithValue("@name", PatientName)
+        'rs.Parameters.AddWithValue("@sex", PatientGender)
+        'rs.Parameters.AddWithValue("@bdate", PatientBirthDate)
+        'rs.Parameters.AddWithValue("@date", Now)
+        'rs.Parameters.AddWithValue("@time", Now.ToLongTimeString())
+        'rs.Parameters.AddWithValue("@status", "Result Received")
+        'rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+        'rs.Parameters.AddWithValue("@section", Section)
+        'rs.Parameters.AddWithValue("@sub_section", SubSection)
+        'rs.Parameters.AddWithValue("@location", cboLocation.Text)
+        'rs.Parameters.AddWithValue("@time_checked_in", Now)
+
+        'If My.Settings.ReceivingStatus = 1 Then
+        '    'Save Order to Worklist
+        '    Connect()
+        '    rs.Connection = conn
+        '    rs.CommandText = "SELECT `main_id` FROM `tmpWorklist` WHERE `main_id` = @mainid"
+        '    reader = rs.ExecuteReader
+        '    reader.Read()
+        '    If reader.HasRows Then
+        '        Disconnect()
+        '        'Update Worklist
+        '        UpdateRecordwthoutMSG("UPDATE `tmpWorklist` SET `status` = @status, `instrument` = @instrument WHERE main_id = @mainid AND `testtype` = @section AND `status` IN ('Processing','Checked-In') AND `sub_section` = @sub_section;")
+        '    Else
+        '        Disconnect()
+        '        'Save Order to Worklist
+        '        SaveRecordwthoutMSG("INSERT INTO `tmpWorklist` (`sample_id`, `patient_id`, `patient_name`, `sex`, `bdate`, `status`, `date`, `time`, `main_id`, `instrument`, `testtype`, `sub_section`, `location`) VALUES " _
+        '                & "(" _
+        '                & "@sampleid," _
+        '                & "@patient_id," _
+        '                & "@name," _
+        '                & "@sex," _
+        '                & "@bdate," _
+        '                & "@status," _
+        '                & "@date," _
+        '                & "@time," _
+        '                & "@mainid," _
+        '                & "@instrument," _
+        '                & "@section," _
+        '                & "@sub_section," _
+        '                & "@location" _
+        '                & ")"
+        '                )
+
+        '        SaveRecordwthoutMSG("INSERT INTO `specimen_tracking` (`sample_id`, `received`, `extracted`, `section`, `sub_section`) VALUES " _
+        '                & "(" _
+        '                & "@mainid," _
+        '                & "@time_checked_in," _
+        '                & "@time_checked_in," _
+        '                & "@section," _
+        '                & "@sub_section" _
+        '                & ")"
+        '                )
+        '    End If
+        '    Disconnect()
+        'Else
+        '    Disconnect()
+        '    UpdateRecordwthoutMSG("UPDATE `tmpWorklist` SET `status` = @status, `instrument` = @instrument WHERE main_id = @mainid AND `testtype` = @section AND `sub_section` = @sub_section;")
+        'End If
 
     End Sub
 
@@ -425,157 +565,389 @@ Public Class MainForm
     '    End If
     '    Disconnect()
     'End Sub
-
+    Private param_Ctr As Integer
+    Private testHasRows As Boolean = False
     Private Sub InsertResultData(ByVal OrderID As String, ByVal ResultName As String, ByVal ResultValue As String, ByVal Instrument As String, ByVal SerialNo As String, ByVal MainID As String)
-        rs.Parameters.Clear()
-        rs.Parameters.AddWithValue("@UniversalID", ResultName)
-        rs.Parameters.AddWithValue("@Measurement", ResultValue.Trim)
-        rs.Parameters.AddWithValue("@sample_id", MainID)
-        rs.Parameters.AddWithValue("@patient_id", PatientID)
-        rs.Parameters.AddWithValue("@channel", ResultName)
-        rs.Parameters.AddWithValue("@date", Now)
-        rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
-        'rs.Parameters.AddWithValue("@section", "Chemistry")
-        'rs.Parameters.AddWithValue("@sub_section", "Clinical Chemistry")
 
-        'MessageBox.Show($"Channel: {ResultName} Result: {ResultValue} Sample id: {MainID} Patient ID: {PatientID} Date : {Now} Instrument: {Instrument & "_" & SerialNo}")
-        'Test names and units for SI Unit
-        Connect()
-        rs.Connection = conn
-        rs.CommandText = "SELECT `specimen`, `test_code`, `order_no`, `test_group`, `si_unit`, `conventional_unit`,`section`,`test_name` FROM `specimen` where `channel` = @channel AND `instrument` = @instrument AND `status` = 'Enable'"
-        reader = rs.ExecuteReader
-        reader.Read()
-        If reader.HasRows Then
-            test_name = reader(0).ToString
-            test_code = reader(1).ToString
-            order_no = reader(2).ToString
-            test_group = reader(3).ToString
-            unit = reader(4).ToString
-            unit_conv = reader(5).ToString
-            Section = reader(6).ToString
-            SubSection = reader(7).ToString
-            Disconnect()
+        Using conn As New MySqlConnection(MyConnectionString)
+            conn.Open()
+            Using trans As MySqlTransaction = conn.BeginTransaction()
+                Try
+                    Using cmd As New MySqlCommand("SELECT `main_id` FROM `tmpWorklist` WHERE `sample_id` = @mainid AND `status` IN ('Processing','Result Received')", conn)
+                        With cmd
+                            .Parameters.AddWithValue("@mainid", MainID)
 
-            'Check for duplicate result if exist save result to `rerun_result` table
-            Connect()
-            rs.Connection = conn
-            rs.CommandText = "SELECT `test_code`, `sample_id`, `status` FROM `tmpresult` WHERE `test_code` = '" & test_code & "' AND `sample_id` = @sample_id"
-            reader = rs.ExecuteReader
-            reader.Read()
-            If reader.HasRows Then
-                If reader(2) = 0 Then
-                    Disconnect()
-                    UpdateRecordwthoutMSG("UPDATE `tmpResult` SET " _
-                            & "`measurement` = @Measurement," _
-                            & "`date` = @date," _
-                            & "`instrument` = @instrument," _
-                            & "`status` = 1" _
-                            & " WHERE `sample_id` = @sample_id AND `test_code` = '" & test_code & "' AND `status` = 0"
-                            )
+                            Dim hasrow As Object = cmd.ExecuteScalar()
 
-                ElseIf reader(2) = 1 Then
-                    Disconnect()
-                    'Save Result
-                    SaveRecordwthoutMSG("INSERT INTO `rerun_result` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `patient_id`, `order_no`, `units`, `unit_conv`, `instrument`, `status`, `test_group`, `section`, `sub_section`) VALUES " _
-                        & "(" _
-                        & "'" & test_name & "', @Measurement, '" & test_code & "', @sample_id, @date, @patient_id, '" & order_no & "', '" & unit & "', '" & unit_conv & "', @instrument, 1, '" & test_group & "', '" & Section & "', '" & SubSection & "'" _
-                        & ")"
-                        )
-                End If
-                'MessageBox.Show($"Ordered {test_code} Sample ID: {MainID}")
-                'MessageBox.Show($"Ordered Channel: {ResultName} Result: {ResultValue} Sample id: {MainID} Patient ID: {PatientID} Date : {Now} Instrument: {Instrument & "_" & SerialNo}")
-            Else
-                Disconnect()
-                If My.Settings.ReceivingStatus = 1 Then
-                    'Save Result
-                    SaveRecordwthoutMSG("INSERT INTO `tmpresult` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `patient_id`, `order_no`, `units`, `unit_conv`, `instrument`, `status`, `test_group`, `section`, `sub_section`) VALUES " _
-                        & "(" _
-                        & "'" & test_name & "', @Measurement, '" & test_code & "', @sample_id, @date, @patient_id, '" & order_no & "', '" & unit & "', '" & unit_conv & "', @instrument, 1, '" & test_group & "',  '" & Section & "', '" & SubSection & "'" _
-                        & ")"
-                        )
-                    'MessageBox.Show($"Not Ordered Channel: {ResultName} Result: {ResultValue} Sample id: {MainID} Patient ID: {PatientID} Date : {Now} Instrument: {Instrument & "_" & SerialNo}")
-                End If
-                'MessageBox.Show($"Not Ordered {test_code} Sample ID: {MainID}")
-            End If
-            Disconnect()
+                            If hasrow Is Nothing OrElse hasrow Is DBNull.Value Then
+                                'The command returns nothing
+                                trans.Rollback()
+                                Exit Sub
+                            End If
 
-        End If
-        Disconnect()
+                            'If the command return row, continue to do the sub
+                        End With
+                    End Using
+
+                    Using cmd1 As New MySqlCommand("SELECT `specimen`, `test_code`, `order_no`, `test_group`, `si_unit`, `conventional_unit`,`section`,`test_name` FROM `specimen` where `channel` = @channel AND `instrument` = @instrument AND `status` = 'Enable'", conn)
+                        With cmd1
+                            .CommandType = CommandType.Text
+                            .Parameters.Clear()
+                            .Parameters.AddWithValue("@channel", ResultName)
+                            .Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                        End With
+
+                        Using rdr1 As MySqlDataReader = cmd1.ExecuteReader
+                            rdr1.Read()
+                            If rdr1.HasRows Then
+                                test_name = rdr1("specimen").ToString
+                                test_code = rdr1("test_code").ToString
+                                order_no = rdr1("order_no").ToString
+                                test_group = rdr1("test_group").ToString
+                                unit = rdr1("si_unit").ToString
+                                unit_conv = rdr1("conventional_unit").ToString
+                                Section = rdr1("section").ToString
+                                SubSection = rdr1("test_name").ToString
+
+                                testHasRows = True
+                            End If
+                        End Using
+                    End Using
+
+                    If testHasRows = True Then
+
+                        'Dim TestParamMeasurement As String = $"@Measurement_{ResultName.Replace("%", "_P").Replace("-", "_").Replace("#", "_N")}"
+                        'Dim TestParamDate As String = $"@date_{ResultName.Replace("%", "_P").Replace("-", "_").Replace("#", "_N")}"
+
+                        'Check for duplicate result if exist save result to `rerun_result` table
+                        Using cmd1 As New MySqlCommand("SELECT `test_code`, `sample_id`, `status` FROM `tmpResult` WHERE `test_code` = @test_code AND `sample_id` = @sample_id", conn, trans)
+                            With cmd1
+                                .Parameters.Clear()
+                                .Parameters.AddWithValue("@sample_id", MainID.Trim)
+                                .Parameters.AddWithValue("@test_code", test_code)
+                            End With
+
+                            Using rdr1 As MySqlDataReader = cmd1.ExecuteReader
+                                rdr1.Read()
+                                If rdr1.HasRows Then
+                                    If rdr1("status") = 0 Then
+                                        rdr1.Close()
+
+                                        'QueryStatement &= $"UPDATE `tmpResult` SET `measurement` = {TestParamMeasurement},`date` = {TestParamDate},`instrument` = @instrument,`status` = 1 WHERE `sample_id` = @sample_id AND `test_code` = '{test_code}' AND `status` = 0;"
+                                        Using cmd2 As New MySqlCommand("UPDATE `tmpResult` SET `measurement` = @measurement,`date` = @date,`instrument` = @instrument,`status` = 1 WHERE `sample_id` = @sample_id AND `test_code` = @test_code AND `status` = 0", conn, trans)
+                                            With cmd2
+                                                .Parameters.AddWithValue("@measurement", ResultValue.Trim)
+                                                .Parameters.AddWithValue("@date", Now)
+                                                .Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                                                .Parameters.AddWithValue("@sample_id", MainID)
+                                                .Parameters.AddWithValue("@test_code", test_code)
+                                                .ExecuteNonQuery()
+                                            End With
+                                        End Using
+
+                                    ElseIf rdr1("status") = 1 Then
+                                        rdr1.Close()
+
+                                        'QueryStatement &= $"INSERT INTO `rerun_result` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `patient_id`, `order_no`, `units`, `unit_conv`, `instrument`, `status`, `test_group`, `section`,`sub_section`)
+                                        '    VALUES ('{ test_name }', {TestParamMeasurement}, '{ test_code }', @sample_id, {TestParamDate}, @patient_id, '{ order_no }', '{ unit }', '{ unit_conv }', @instrument, '{ Rerun }', '{ test_group }','{Section}', '{ SubSection }');"
+                                        Using insertCmd As New MySqlCommand("INSERT INTO rerun_result (universal_id, measurement, test_code, sample_id, date, patient_id, order_no, units, unit_conv, instrument, status, test_group, section, sub_section) VALUES (@test_name, @measurement, @test_code, @sample_id, @date, @patient_id, @order_no, @unit, @unit_conv, @instrument, @status, @test_group, @section, @sub_section)", conn, trans)
+                                            With insertCmd
+                                                .Parameters.AddWithValue("@test_name", test_name)
+                                                .Parameters.AddWithValue("@measurement", ResultValue.Trim)
+                                                .Parameters.AddWithValue("@test_code", test_code)
+                                                .Parameters.AddWithValue("@sample_id", MainID)
+                                                .Parameters.AddWithValue("@date", Now)
+                                                .Parameters.AddWithValue("@patient_id", patient_id)
+                                                .Parameters.AddWithValue("@order_no", order_no)
+                                                .Parameters.AddWithValue("@unit", unit)
+                                                .Parameters.AddWithValue("@unit_conv", unit_conv)
+                                                .Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                                                .Parameters.AddWithValue("@status", 1)
+                                                .Parameters.AddWithValue("@test_group", test_group)
+                                                .Parameters.AddWithValue("@section", Section)
+                                                .Parameters.AddWithValue("@sub_section", SubSection)
+                                                .ExecuteNonQuery()
+                                            End With
+                                        End Using
+                                    End If
+                                Else
+                                    rdr1.Close()
+                                    If My.Settings.ReceivingStatus = 1 Then
+                                        'Save Result
+                                        'QueryStatement &= $"INSERT INTO `tmpresult` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `patient_id`, `order_no`, `units`, `unit_conv`, `instrument`, `status`, `test_group`, `section`,`sub_section`)
+                                        '    VALUES ('{test_name }', {TestParamMeasurement}, '{ test_code }', @sample_id, {TestParamDate}, @patient_id,' { order_no }', '{ unit }', '{ unit_conv }', @instrument, 1, '{ test_group }', '{Section}','{ SubSection }');"
+                                        Using insertCmd As New MySqlCommand("INSERT INTO tmpresult (universal_id, measurement, test_code, sample_id, date, patient_id, order_no, units, unit_conv, instrument, status, test_group, section, sub_section) VALUES (@test_name, @measurement, @test_code, @sample_id, @date, @patient_id, @order_no, @unit, @unit_conv, @instrument, 1, @test_group, @section, @sub_section)", conn, trans)
+                                            With insertCmd
+                                                .Parameters.AddWithValue("@test_name", test_name)
+                                                .Parameters.AddWithValue("@measurement", ResultValue.Trim)
+                                                .Parameters.AddWithValue("@test_code", test_code)
+                                                .Parameters.AddWithValue("@sample_id", MainID)
+                                                .Parameters.AddWithValue("@date", Now)
+                                                .Parameters.AddWithValue("@patient_id", patient_id)
+                                                .Parameters.AddWithValue("@order_no", order_no)
+                                                .Parameters.AddWithValue("@unit", unit)
+                                                .Parameters.AddWithValue("@unit_conv", unit_conv)
+                                                .Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                                                .Parameters.AddWithValue("@test_group", test_group)
+                                                .Parameters.AddWithValue("@section", Section)
+                                                .Parameters.AddWithValue("@sub_section", SubSection)
+                                                .ExecuteNonQuery()
+                                            End With
+                                        End Using
+                                    End If
+                                End If
+                            End Using
+                        End Using
+                        testHasRows = False
+                    End If
+
+                    trans.Commit()
+                Catch ex As Exception
+                    MessageBox.Show(ex.ToString, "System Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    trans.Rollback()
+                    ErrorLog(ex.ToString)
+                End Try
+            End Using
+        End Using
+        '###########################################
+        'rs.Parameters.Clear()
+        'rs.Parameters.AddWithValue("@UniversalID", ResultName)
+        'rs.Parameters.AddWithValue("@Measurement", ResultValue.Trim)
+        'rs.Parameters.AddWithValue("@sample_id", MainID)
+        'rs.Parameters.AddWithValue("@patient_id", PatientID)
+        'rs.Parameters.AddWithValue("@channel", ResultName)
+        'rs.Parameters.AddWithValue("@date", Now)
+        'rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+        ''rs.Parameters.AddWithValue("@section", "Chemistry")
+        ''rs.Parameters.AddWithValue("@sub_section", "Clinical Chemistry")
+
+        ''MessageBox.Show($"Channel: {ResultName} Result: {ResultValue} Sample id: {MainID} Patient ID: {PatientID} Date : {Now} Instrument: {Instrument & "_" & SerialNo}")
+        ''Test names and units for SI Unit
+        'Connect()
+        'rs.Connection = conn
+        'rs.CommandText = "SELECT `specimen`, `test_code`, `order_no`, `test_group`, `si_unit`, `conventional_unit`,`section`,`test_name` FROM `specimen` where `channel` = @channel AND `instrument` = @instrument AND `status` = 'Enable'"
+        'reader = rs.ExecuteReader
+        'reader.Read()
+        'If reader.HasRows Then
+        '    test_name = reader(0).ToString
+        '    test_code = reader(1).ToString
+        '    order_no = reader(2).ToString
+        '    test_group = reader(3).ToString
+        '    unit = reader(4).ToString
+        '    unit_conv = reader(5).ToString
+        '    Section = reader(6).ToString
+        '    SubSection = reader(7).ToString
+        '    Disconnect()
+
+        '    'Check for duplicate result if exist save result to `rerun_result` table
+        '    Connect()
+        '    rs.Connection = conn
+        '    rs.CommandText = "SELECT `test_code`, `sample_id`, `status` FROM `tmpresult` WHERE `test_code` = '" & test_code & "' AND `sample_id` = @sample_id"
+        '    reader = rs.ExecuteReader
+        '    reader.Read()
+        '    If reader.HasRows Then
+        '        If reader(2) = 0 Then
+        '            Disconnect()
+        '            UpdateRecordwthoutMSG("UPDATE `tmpResult` SET " _
+        '                    & "`measurement` = @Measurement," _
+        '                    & "`date` = @date," _
+        '                    & "`instrument` = @instrument," _
+        '                    & "`status` = 1" _
+        '                    & " WHERE `sample_id` = @sample_id AND `test_code` = '" & test_code & "' AND `status` = 0"
+        '                    )
+
+        '        ElseIf reader(2) = 1 Then
+        '            Disconnect()
+        '            'Save Result
+        '            SaveRecordwthoutMSG("INSERT INTO `rerun_result` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `patient_id`, `order_no`, `units`, `unit_conv`, `instrument`, `status`, `test_group`, `section`, `sub_section`) VALUES " _
+        '                & "(" _
+        '                & "'" & test_name & "', @Measurement, '" & test_code & "', @sample_id, @date, @patient_id, '" & order_no & "', '" & unit & "', '" & unit_conv & "', @instrument, 1, '" & test_group & "', '" & Section & "', '" & SubSection & "'" _
+        '                & ")"
+        '                )
+        '        End If
+        '        'MessageBox.Show($"Ordered {test_code} Sample ID: {MainID}")
+        '        'MessageBox.Show($"Ordered Channel: {ResultName} Result: {ResultValue} Sample id: {MainID} Patient ID: {PatientID} Date : {Now} Instrument: {Instrument & "_" & SerialNo}")
+        '    Else
+        '        Disconnect()
+        '        If My.Settings.ReceivingStatus = 1 Then
+        '            'Save Result
+        '            SaveRecordwthoutMSG("INSERT INTO `tmpresult` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `patient_id`, `order_no`, `units`, `unit_conv`, `instrument`, `status`, `test_group`, `section`, `sub_section`) VALUES " _
+        '                & "(" _
+        '                & "'" & test_name & "', @Measurement, '" & test_code & "', @sample_id, @date, @patient_id, '" & order_no & "', '" & unit & "', '" & unit_conv & "', @instrument, 1, '" & test_group & "',  '" & Section & "', '" & SubSection & "'" _
+        '                & ")"
+        '                )
+        '            'MessageBox.Show($"Not Ordered Channel: {ResultName} Result: {ResultValue} Sample id: {MainID} Patient ID: {PatientID} Date : {Now} Instrument: {Instrument & "_" & SerialNo}")
+        '        End If
+        '        'MessageBox.Show($"Not Ordered {test_code} Sample ID: {MainID}")
+        '    End If
+        '    Disconnect()
+
+        'End If
+        'Disconnect()
 
     End Sub
 
     Private Sub InsertControl(ByVal ControlID As String, ByVal ResultName As String, ByVal ResultValue As String, ByVal Instrument As String, ByVal SerialNo As String, RunDate As Date)
-        rs.Parameters.Clear()
-        rs.Parameters.AddWithValue("@UniversalID", ResultName)
-        rs.Parameters.AddWithValue("@Measurement", ResultValue)
-        rs.Parameters.AddWithValue("@sample_id", ControlID)
-        rs.Parameters.AddWithValue("@patient_id", PatientID)
-        rs.Parameters.AddWithValue("@channel", ResultName)
-        'rs.Parameters.AddWithValue("@date", Now)
-        'rs.Parameters.AddWithValue("@month", Now.Month)
-        'rs.Parameters.AddWithValue("@year", Now.Year)
-        rs.Parameters.AddWithValue("@date", RunDate)
-        rs.Parameters.AddWithValue("@month", RunDate.Month)
-        rs.Parameters.AddWithValue("@year", RunDate.Year)
-        rs.Parameters.AddWithValue("@instrument", Instrument.Trim & "_" & SerialNo.Trim)
-        'rs.Parameters.AddWithValue("@section", Section)
-        rs.Parameters.AddWithValue("@lotNo", LotNo)
+        'rs.Parameters.Clear()
+        'rs.Parameters.AddWithValue("@UniversalID", ResultName)
+        'rs.Parameters.AddWithValue("@Measurement", ResultValue)
+        'rs.Parameters.AddWithValue("@sample_id", ControlID)
+        'rs.Parameters.AddWithValue("@patient_id", PatientID)
+        'rs.Parameters.AddWithValue("@channel", ResultName)
+        ''rs.Parameters.AddWithValue("@date", Now)
+        ''rs.Parameters.AddWithValue("@month", Now.Month)
+        ''rs.Parameters.AddWithValue("@year", Now.Year)
+        'rs.Parameters.AddWithValue("@date", RunDate)
+        'rs.Parameters.AddWithValue("@month", RunDate.Month)
+        'rs.Parameters.AddWithValue("@year", RunDate.Year)
+        'rs.Parameters.AddWithValue("@instrument", Instrument.Trim & "_" & SerialNo.Trim)
+        ''rs.Parameters.AddWithValue("@section", Section)
+        'rs.Parameters.AddWithValue("@lotNo", LotNo)
 
-        'Test Names
-        Connect()
-        rs.Connection = conn
-        rs.CommandText = "SELECT `specimen`, `test_code`, `si_unit`,`section`,`test_name` FROM `specimen` where `channel` = @channel AND `instrument` = @instrument"
-        reader = rs.ExecuteReader
-        reader.Read()
-        If reader.HasRows Then
-            test_name = reader(0).ToString
-            test_code = reader(1).ToString
-            unit = reader(2).ToString
-            Section = reader(3).ToString
-            SubSection = reader(4).ToString
-        Else
-            test_name = ""
-            test_code = ""
-            unit = ""
-        End If
-        Disconnect()
+        ''Test Names
+        'Connect()
+        'rs.Connection = conn
+        'rs.CommandText = "SELECT `specimen`, `test_code`, `si_unit`,`section`,`test_name` FROM `specimen` where `channel` = @channel AND `instrument` = @instrument"
+        'reader = rs.ExecuteReader
+        'reader.Read()
+        'If reader.HasRows Then
+        '    test_name = reader(0).ToString
+        '    test_code = reader(1).ToString
+        '    unit = reader(2).ToString
+        '    Section = reader(3).ToString
+        '    SubSection = reader(4).ToString
+        'Else
+        '    test_name = ""
+        '    test_code = ""
+        '    unit = ""
+        'End If
+        'Disconnect()
 
-        SaveRecordwthoutMSG("INSERT INTO `control_result` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `month`, `year`, `instrument`, `test_type`, `unit`,`lot_no`) VALUES " _
-                & "(" _
-                & "'" & test_name & "'," _
-                & "@Measurement," _
-                & "'" & test_code & "'," _
-                & "@sample_id," _
-                & "@date," _
-                & "@month," _
-                & "@year," _
-                & "@instrument," _
-                & "'" & Section & "'," _
-                & "'" & unit & "'," _
-                & "@lotNo" _
-                & ")"
-                )
+        'SaveRecordwthoutMSG("INSERT INTO `control_result` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `month`, `year`, `instrument`, `test_type`, `unit`,`lot_no`) VALUES " _
+        '        & "(" _
+        '        & "'" & test_name & "'," _
+        '        & "@Measurement," _
+        '        & "'" & test_code & "'," _
+        '        & "@sample_id," _
+        '        & "@date," _
+        '        & "@month," _
+        '        & "@year," _
+        '        & "@instrument," _
+        '        & "'" & Section & "'," _
+        '        & "'" & unit & "'," _
+        '        & "@lotNo" _
+        '        & ")"
+        '        )
+
+        Using conn As New MySqlConnection(My.Settings.ConnectionString)
+            conn.Open()
+            Using trans As MySqlTransaction = conn.BeginTransaction()
+                Try
+                    Using cmd As New MySqlCommand()
+                        cmd.Connection = conn
+                        cmd.CommandText = "SELECT `specimen`, `test_code`, `si_unit`,`section`,`test_name` FROM `specimen` where `channel` = @channel AND `instrument` = @instrument"
+                        cmd.Parameters.Clear()
+                        cmd.Parameters.AddWithValue("@channel", ResultName)
+                        cmd.Parameters.AddWithValue("@instrument", Instrument.Trim & "_" & SerialNo)
+
+                        Using reader As MySqlDataReader = cmd.ExecuteReader()
+                            If reader.Read() Then
+                                test_name = reader(0).ToString
+                                test_code = reader(1).ToString
+                                unit = reader(2).ToString
+                                Section = reader(3).ToString
+                                SubSection = reader(4).ToString
+                            Else
+                                test_name = ""
+                                test_code = ""
+                                unit = ""
+                            End If
+                        End Using
+                    End Using
+
+                    Using cmd As New MySqlCommand()
+                        cmd.Connection = conn
+                        cmd.Transaction = trans
+                        cmd.CommandText = "INSERT INTO `control_result` (`universal_id`, `measurement`, `test_code`, `sample_id`, `date`, `month`, `year`, `instrument`, `test_type`, `unit`,`lot_no`) VALUES " _
+                & "( @test_name, @Measurement, @test_code, @sample_id, @date, @month, @year, @instrument, @section, @unit, @lotNo)"
+                        cmd.Parameters.Clear()
+                        cmd.Parameters.AddWithValue("@test_name", test_name)
+                        cmd.Parameters.AddWithValue("@Measurement", ResultValue)
+                        cmd.Parameters.AddWithValue("@test_code", test_code)
+                        cmd.Parameters.AddWithValue("@sample_id", ControlID)
+                        cmd.Parameters.AddWithValue("@date", RunDate)
+                        cmd.Parameters.AddWithValue("@month", RunDate.Month)
+                        cmd.Parameters.AddWithValue("@year", RunDate.Year)
+                        cmd.Parameters.AddWithValue("@instrument", Instrument.Trim & "_" & SerialNo)
+                        cmd.Parameters.AddWithValue("@section", Section)
+                        cmd.Parameters.AddWithValue("@unit", unit)
+                        cmd.Parameters.AddWithValue("@LOTNo", LotNo)
+
+                        cmd.ExecuteNonQuery()
+                    End Using
+
+                    trans.Commit()
+                Catch ex As Exception
+                    trans.Rollback()
+                    ErrorLog(ex.ToString)
+                End Try
+            End Using
+        End Using
     End Sub
 
     Private Sub UpdateResultStatus()
-        Connect()
-        rs.Connection = conn
-        rs.CommandText = "UPDATE `tmpresultstatus` SET `status` = 'New Result'"
-        rs.ExecuteNonQuery()
-        Disconnect()
+        Using conn As New MySqlConnection(My.Settings.ConnectionString)
+            conn.Open()
+            Using trans As MySqlTransaction = conn.BeginTransaction()
+                Try
+                    Using cmd As New MySqlCommand()
+                        cmd.Connection = conn
+                        cmd.Transaction = trans
+                        cmd.CommandText = "UPDATE `tmpresultstatus` SET `status` = 'New Result'"
+                        cmd.ExecuteNonQuery()
+                    End Using
+
+                    trans.Commit()
+                Catch ex As Exception
+                    trans.Rollback()
+                    ErrorLog(ex.ToString)
+                End Try
+            End Using
+        End Using
+        'Connect()
+        'rs.Connection = conn
+        'rs.CommandText = "UPDATE `tmpresultstatus` SET `status` = 'New Result'"
+        'rs.ExecuteNonQuery()
+        'Disconnect()
     End Sub
 
     Private Sub GetDefaultUnit()
         If IO.File.Exists(Application.StartupPath & "\ConnectionString.log") Then
-            Connect()
-            rs.Connection = conn
-            rs.CommandText = "SELECT `unitformat` FROM `default_unit` WHERE `instrument` = '" & Me.txtMachine.Text & "'"
-            reader = rs.ExecuteReader
-            reader.Read()
-            If reader.HasRows Then
-                DefaultUnit = reader(0)
-            End If
-            Disconnect()
+            'Connect()
+            'rs.Connection = conn
+            'rs.CommandText = "SELECT `unitformat` FROM `default_unit` WHERE `instrument` = '" & Me.txtMachine.Text & "'"
+            'reader = rs.ExecuteReader
+            'reader.Read()
+            'If reader.HasRows Then
+            '    DefaultUnit = reader(0)
+            'End If
+            'Disconnect()
+
+            Using conn As New MySqlConnection(My.Settings.ConnectionString)
+                conn.Open()
+                Using cmd As New MySqlCommand()
+                    cmd.Connection = conn
+                    cmd.CommandText = "SELECT `unitformat` FROM `default_unit` WHERE `instrument` = @machine"
+                    cmd.Parameters.Clear()
+                    cmd.Parameters.AddWithValue("@machine", Me.txtMachine.Text)
+
+                    Using reader As MySqlDataReader = cmd.ExecuteReader()
+                        If reader.Read() Then
+                            DefaultUnit = reader(0)
+                        End If
+                    End Using
+                End Using
+            End Using
         End If
     End Sub
 
@@ -652,42 +1024,93 @@ Public Class MainForm
                 'Get Executable Path for saving
                 Dim path As String = Application.ExecutablePath
 
-                'Parameteres for table machines
-                rs.Parameters.Clear()
-                rs.Parameters.AddWithValue("@path", path)
+                Using conn As New MySqlConnection(My.Settings.ConnectionString)
+                    Dim hasrow As Boolean = False
+                    conn.Open()
+                    Using chkmachine As New MySqlCommand("SELECT * FROM `machines` WHERE `name` = @machine AND `serial_no` = @serial LIMIT 1", conn)
+                        chkmachine.Parameters.AddWithValue("@machine", txtMachine.Text)
+                        chkmachine.Parameters.AddWithValue("@serial", txtSerial.Text)
 
-                conn.ConnectionString = TXTConnectionString
-                conn.Open()
-                rs.Connection = conn
-                rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-                reader = rs.ExecuteReader
-                reader.Read()
-                If reader.HasRows Then
-                    conn.Close()
-                    conn.ConnectionString = TXTConnectionString
-                    conn.Open()
-                    rs.Connection = conn
-                    rs.CommandText = "UPDATE `machines` SET " _
-                        & "`name` = '" & txtMachine.Text & "'," _
-                        & "`test_name` = NULL," _
-                        & "`serial_no` = '" & txtSerial.Text & "'," _
-                        & "`com_port` = '" & ComPortsBox.Text & "'," _
-                        & "`baud_rate`= '" & cboBaudrate.Text & "'," _
-                        & "`status` = 'Disconnected'," _
-                        & "`location` = @path" _
-                        & " WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-                    rs.ExecuteNonQuery()
-                    conn.Close()
-                Else
-                    conn.Close()
-                    conn.ConnectionString = TXTConnectionString
-                    conn.Open()
-                    rs.Connection = conn
-                    rs.CommandText = "INSERT INTO `machines` (`name`, `test_name`, `serial_no`, `com_port`, `baud_rate`, `status`, `location`) VALUES ('" & txtMachine.Text & "', NULL, '" & txtSerial.Text & "', '" & ComPortsBox.Text & "', '" & cboBaudrate.Text & "', 'Disconnected', @path)"
-                    rs.ExecuteNonQuery()
-                    conn.Close()
-                End If
-                conn.Close()
+                        hasrow = chkmachine.ExecuteScalar() IsNot Nothing
+                    End Using
+
+                    If hasrow Then
+                        'Update existing machine record
+                        Using updtmachine As New MySqlCommand("UPDATE machines SET
+                                                                    name = @name,
+                                                                    test_name = @testname,
+                                                                    serial_no = @serialno,
+                                                                    com_port = @comport,
+                                                                    baud_rate = @baudrate,
+                                                                    status = @status,
+                                                                    location = @location
+                                                                    WHERE name = @name AND serial_no = @serialno", conn)
+                            With updtmachine
+                                .Parameters.AddWithValue("@name", txtMachine.Text)
+                                .Parameters.AddWithValue("@testname", "")
+                                .Parameters.AddWithValue("@serialno", txtSerial.Text)
+                                .Parameters.AddWithValue("@comport", ComPortsBox.Text)
+                                .Parameters.AddWithValue("@baudrate", cboBaudrate.Text)
+                                .Parameters.AddWithValue("@status", "Disconnected")
+                                .Parameters.AddWithValue("@location", path)
+                                .ExecuteNonQuery()
+                            End With
+                        End Using
+                    Else
+                        'Insert new machione to machine table
+                        Using insrtamachine As New MySqlCommand("INSERT INTO machines
+                                                                         (name, test_name, serial_no, com_port, baud_rate, status, location)
+                                                                         VALUES
+                                                                         (@name, @testname, @serialno, @comport, @baudrate, @status, @location)", conn)
+                            With insrtamachine
+                                .Parameters.AddWithValue("@name", txtMachine.Text)
+                                .Parameters.AddWithValue("@testname", "")
+                                .Parameters.AddWithValue("@serialno", txtSerial.Text)
+                                .Parameters.AddWithValue("@comport", ComPortsBox.Text)
+                                .Parameters.AddWithValue("@baudrate", cboBaudrate.Text)
+                                .Parameters.AddWithValue("@status", "Disconnected")
+                                .Parameters.AddWithValue("@location", path)
+                                .ExecuteNonQuery()
+                            End With
+                        End Using
+                    End If
+                End Using
+                ''Parameteres for table machines
+                'rs.Parameters.Clear()
+                'rs.Parameters.AddWithValue("@path", path)
+
+                'conn.ConnectionString = TXTConnectionString
+                'conn.Open()
+                'rs.Connection = conn
+                'rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+                'reader = rs.ExecuteReader
+                'reader.Read()
+                'If reader.HasRows Then
+                '    conn.Close()
+                '    conn.ConnectionString = TXTConnectionString
+                '    conn.Open()
+                '    rs.Connection = conn
+                '    rs.CommandText = "UPDATE `machines` SET " _
+                '        & "`name` = '" & txtMachine.Text & "'," _
+                '        & "`test_name` = NULL," _
+                '        & "`serial_no` = '" & txtSerial.Text & "'," _
+                '        & "`com_port` = '" & ComPortsBox.Text & "'," _
+                '        & "`baud_rate`= '" & cboBaudrate.Text & "'," _
+                '        & "`status` = 'Disconnected'," _
+                '        & "`location` = @path" _
+                '        & " WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+                '    rs.ExecuteNonQuery()
+                '    conn.Close()
+                'Else
+                '    conn.Close()
+                '    conn.ConnectionString = TXTConnectionString
+                '    conn.Open()
+                '    rs.Connection = conn
+                '    rs.CommandText = "INSERT INTO `machines` (`name`, `test_name`, `serial_no`, `com_port`, `baud_rate`, `status`, `location`) VALUES ('" & txtMachine.Text & "', NULL, '" & txtSerial.Text & "', '" & ComPortsBox.Text & "', '" & cboBaudrate.Text & "', 'Disconnected', @path)"
+                '    rs.ExecuteNonQuery()
+                '    conn.Close()
+                'End If
+                'conn.Close()
 
                 MessageBox.Show("Settings saved! " & vbNewLine & "Please restart the application to take effect.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 '#############################################################################################################################################################
@@ -715,11 +1138,16 @@ Public Class MainForm
     Private Sub ErrorLog(ByVal logTxt As String)
 
         'Write file to Error.Log
-        CommLog = New FileStream(ErrorComm, FileMode.Append, FileAccess.Write)
-        CommWriter = New StreamWriter(CommLog)
-        CommWriter.WriteLine(System.DateTime.Now & " [Error] : " & logTxt)
-        CommWriter.Close()
-        CommLog.Close()
+        Using CommLog As New FileStream(ErrorComm, FileMode.Append, FileAccess.Write)
+            Using CommWriter As New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Error] : " & logTxt)
+            End Using
+        End Using
+        'CommLog = New FileStream(ErrorComm, FileMode.Append, FileAccess.Write)
+        'CommWriter = New StreamWriter(CommLog)
+        'CommWriter.WriteLine(System.DateTime.Now & " [Error] : " & logTxt)
+        'CommWriter.Close()
+        'CommLog.Close()
     End Sub
 
     'Start reading from CommPort
@@ -1080,12 +1508,12 @@ Public Class MainForm
                         MainID = SampleID
                     End If
 
-                    'MainID = Replace(MainID, ", ", "^")
-                    'MainID = RemoveWhitespace(MainID)
-                    'MainID = SampleID_Final
+                'MainID = Replace(MainID, ", ", "^")
+                'MainID = RemoveWhitespace(MainID)
+                'MainID = SampleID_Final
 
-                    'Me.Invoke(Sub() IdentifyOrder(MainID, RemoveWhitespace(PatientID), PatientName, Instrument, Serial, MainID, PatientSexFinal, PatientBdateFinal))
-                    ''Me.Invoke(Sub() IdentifyOrder(MainID, RemoveWhitespace(PatientID), PatientName, Instrument, Serial, Section, MainID, PatientSexFinal, PatientBdateFinal))
+                'Me.Invoke(Sub() IdentifyOrder(MainID, RemoveWhitespace(PatientID), PatientName, Instrument, Serial, MainID, PatientSexFinal, PatientBdateFinal))
+                ''Me.Invoke(Sub() IdentifyOrder(MainID, RemoveWhitespace(PatientID), PatientName, Instrument, Serial, Section, MainID, PatientSexFinal, PatientBdateFinal))
                 Case "R"
 
                     If data.Split("|").GetValue(11).ToString().Trim.Split("<").GetValue(0).ToString.Trim = "" Then
@@ -1130,7 +1558,7 @@ Public Class MainForm
                         Me.Invoke(Sub() InsertControl(MainID, ResultName, ResultValue, Instrument, Serial, DateReceived))
                     End If
 
-                    'Me.Invoke(Sub() DisplayResult(SampleID_Final, RemoveWhitespace(ResultName), RemoveWhitespace(ResultValue), Instrument, Serial, Section, MainID))
+                'Me.Invoke(Sub() DisplayResult(SampleID_Final, RemoveWhitespace(ResultName), RemoveWhitespace(ResultValue), Instrument, Serial, Section, MainID))
                 Case "Q"
                     Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & data))
 
@@ -1147,7 +1575,7 @@ Public Class MainForm
                     'QueryStatus = True
                     QueryStatus = QRMainID <> ""
 
-                    'Remove this part for Micros ES60----------------------------------------------------------------------
+                'Remove this part for Micros ES60----------------------------------------------------------------------
                 Case "C"
                     Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & data))
 
@@ -1157,7 +1585,7 @@ Public Class MainForm
                     CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & Replace(data, Chr(10), ""))
                     CommWriter.Close()
                     CommLog.Close()
-                    '-------------------------------------------------------------------------------------------------------
+                '-------------------------------------------------------------------------------------------------------
                 Case "L"
                     Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & data))
 
@@ -1219,250 +1647,227 @@ Public Class MainForm
     Public TestList As New List(Of String)
 
     Private Sub QueryProcess(ByVal SampleID As String, ByVal Instrument As String, ByVal SerialNo As String)
-        rs.Parameters.Clear()
-        rs.Parameters.AddWithValue("@SampleID", SampleID)
-        'rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+        Dim exist As Boolean = False
+        Using conn As New MySqlConnection(My.Settings.ConnectionString)
+            conn.Open()
 
-        Connect()
-        rs.Connection = conn
-        rs.CommandText = "SELECT `tmpWorklist`.`sample_id`, `tmpWorklist`.`patient_id`, `tmpWorklist`.`patient_name`, `tmpWorklist`.`sex`, `tmpWorklist`.`bdate`, `patient_order`.`mode`,`tmpWorklist`.`testtype`,`tmpWorklist`.`sub_section` FROM `tmpWorklist`, `patient_order` WHERE `tmpWorklist`.`sample_id` = @SampleID AND `patient_order`.`sample_id` = @SampleID AND `tmpWorklist`.`status` IN ('Processing', 'Result Received') LIMIT 1"
-        reader = rs.ExecuteReader
-        reader.Read()
-        If reader.HasRows Then
-            PatientID_Out = reader(1).ToString
-            PatientName_Out = Replace(reader(2).ToString, ", ", "^")
-            PatientBDate_Out = "" 'DateTime.ParseExact(reader(4), "MM/dd/yyyy", System.Globalization.CultureInfo.InvariantCulture).ToString("yyyyMMdd")
-            PatientSex_Out = reader(3).ToString.Substring(0, 1)
-            OrderSampleID_Out = reader(0).ToString
+            Using cmd As New MySqlCommand()
+                cmd.Connection = conn
+                cmd.CommandText = "SELECT `tmpWorklist`.`sample_id`, `tmpWorklist`.`patient_id`, `tmpWorklist`.`patient_name`, `tmpWorklist`.`sex`, `tmpWorklist`.`bdate`, `patient_order`.`mode`,`tmpWorklist`.`testtype`,`tmpWorklist`.`sub_section` FROM `tmpWorklist`, `patient_order` WHERE `tmpWorklist`.`sample_id` = @SampleID AND `patient_order`.`sample_id` = @SampleID AND `tmpWorklist`.`status` IN ('Processing', 'Result Received') LIMIT 1"
+                cmd.Parameters.Clear()
+                cmd.Parameters.AddWithValue("@SampleID", SampleID)
 
-            'Section = reader(6).ToString
-            'SubSection = reader(7).ToString
-            Disconnect()
+                Using reader As MySqlDataReader = cmd.ExecuteReader()
+                    PatientID_Out = reader(1).ToString
+                    PatientName_Out = Replace(reader(2).ToString, ", ", "^")
+                    PatientBDate_Out = "" 'DateTime.ParseExact(reader(4), "MM/dd/yyyy", System.Globalization.CultureInfo.InvariantCulture).ToString("yyyyMMdd")
+                    PatientSex_Out = reader(3).ToString.Substring(0, 1)
+                    OrderSampleID_Out = reader(0).ToString
+                    exist = True
+                End Using
+            End Using
 
-            MainID = OrderSampleID_Out
+            If exist Then
+                MainID = OrderSampleID_Out
 
-            'Connect()
-            'rs.Connection = conn
-            'rs.CommandText = "SELECT `order_code` FROM `lis_order` WHERE `sample_id` = '" & MainID & "'"
-            'reader = rs.ExecuteReader
-            'While reader.Read
-            '    TestList.Add(reader(0).ToString)
-            'End While
-            'Disconnect()
+                Using cmd As New MySqlCommand()
+                    cmd.Connection = conn
+                    cmd.CommandText = "Select `test_code` FROM `tmpresult` WHERE `sample_id` = @main_id"
+                    cmd.Parameters.Clear()
+                    cmd.Parameters.AddWithValue("@main_id", MainID)
 
-            Connect()
-            rs.Connection = conn
-            'rs.CommandText = "Select `test_code` FROM `tmpresult` WHERE `sample_id` = '" & MainID & "' AND section = '" & Section & "' AND sub_section = '" & SubSection & "'"
-            rs.CommandText = "Select `test_code` FROM `tmpresult` WHERE `sample_id` = '" & MainID & "'"
-            reader = rs.ExecuteReader
-            While reader.Read
-                TestList.Add(reader(0).ToString)
-            End While
-            Disconnect()
+                    Using reader As MySqlDataReader = cmd.ExecuteReader()
+                        While reader.Read
+                            TestList.Add(reader(0).ToString)
+                        End While
+                    End Using
+                End Using
 
-            OrderTest_Out = ""
-            For Each a In TestList
-                Connect()
-                rs.Connection = conn
-                rs.Parameters.Clear()
-                rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
-                rs.CommandText = "SELECT `channel` FROM `specimen` WHERE `test_code` = '" & a.ToString & "' AND `instrument` = @instrument AND `status` = 'Enable'"
-                reader = rs.ExecuteReader
-                reader.Read()
-                If reader.HasRows Then
-                    'OrderTest_Out &= "^^^" & reader(0).ToString & "\"
-                    ''OrderTest_Out &= "^^^" & a.ToString & "\"
+                For Each a In TestList
+                    Using cmd As New MySqlCommand()
+                        cmd.Connection = conn
+                        cmd.CommandText = "SELECT `channel` FROM `specimen` WHERE `test_code` = @test_code AND `instrument` = @instrument AND `status` = 'Enable'"
+                        cmd.Parameters.Clear()
+                        cmd.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+                        cmd.Parameters.AddWithValue("@test_code", a.ToString)
 
-                    Dim channel As String = $"^^^{reader(0).ToString()}\"
-                    If Not OrderTest_Out.Contains(channel) Then
-                        OrderTest_Out &= channel
-                        'countOrderedTest += 1
-                    End If
-                End If
-                Disconnect()
-            Next
-            TestList.Clear()
+                        Using reader As MySqlDataReader = cmd.ExecuteReader()
+                            If reader.Read() Then
+                                Dim channel As String = $"^^^{reader(0).ToString()}\"
+                                If Not OrderTest_Out.Contains(channel) Then
+                                    OrderTest_Out &= channel
+                                End If
+                            End If
+                        End Using
+                    End Using
+                Next
 
-            Dim HeaderOutput As String
-            Dim PatientOutput As String
-            Dim OrderOutput As String
-            Dim Terminator As String
+                TestList.Clear()
 
-            'This part is for Yumizen H500/550 /Sending query to machine
-            HeaderOutput = "1H|\^&|||SBSI LIS|||||||P|E1394-97|" & FormatDateRegex()
-            PatientOutput = "2P|1||" & PatientID_Out & "||" & PatientName_Out & "||" & PatientBDate_Out & "|" & PatientSex_Out & "|||||"
-            'OrderOutput = "3O|1|" & OrderSampleID_Out & "||" & OrderTest_Out.TrimEnd("\") & "|R|" & FormatDateRegex() & "|||||N||||||||||||||Q|||||"
-            OrderOutput = "3O|1|" & OrderSampleID_Out & "||" & OrderTest_Out.TrimEnd("\") & "|R|" & FormatDateRegex() & "|||||A||||1|"
-            Terminator = "4L|1|"
-            'End
+                Dim HeaderOutput As String
+                Dim PatientOutput As String
+                Dim OrderOutput As String
+                Dim Terminator As String
 
-            Dim SumHeader As String = CheckSum(HeaderOutput & CR & ETX)
-            Dim SumPatient As String = CheckSum(PatientOutput & CR & ETX)
-            Dim SumOrder As String = CheckSum(OrderOutput & CR & ETX)
-            Dim SumTerminator As String = CheckSum(Terminator & CR & ETX)
+                'This part is for Yumizen H500/550 /Sending query to machine
+                HeaderOutput = "1H|\^&|||SBSI LIS|||||||P|E1394-97|" & FormatDateRegex()
+                PatientOutput = "2P|1||" & PatientID_Out & "||" & PatientName_Out & "||" & PatientBDate_Out & "|" & PatientSex_Out & "|||||"
+                'OrderOutput = "3O|1|" & OrderSampleID_Out & "||" & OrderTest_Out.TrimEnd("\") & "|R|" & FormatDateRegex() & "|||||N||||||||||||||Q|||||"
+                OrderOutput = "3O|1|" & OrderSampleID_Out & "||" & OrderTest_Out.TrimEnd("\") & "|R|" & FormatDateRegex() & "|||||A||||1|"
+                Terminator = "4L|1|"
+                'End
 
-            Enquery(Port)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+                Dim SumHeader As String = CheckSum(HeaderOutput & CR & ETX)
+                Dim SumPatient As String = CheckSum(PatientOutput & CR & ETX)
+                Dim SumOrder As String = CheckSum(OrderOutput & CR & ETX)
+                Dim SumTerminator As String = CheckSum(Terminator & CR & ETX)
 
-            'Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine("******************************Start-Query-Request******************************" & vbNewLine)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine)
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-
-            Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
-
-            'Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>")
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-
-            Port.Write(STX & PatientOutput & CR & ETX & SumPatient & CR & LF)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & PatientOutput & "<CR><ETX>" & SumPatient & "<CR><LF>" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
-
-            'Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & PatientOutput & "<CR><ETX>" & SumPatient & "<CR><LF>")
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-
-            Port.Write(STX & OrderOutput & CR & ETX & SumOrder & CR & LF)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & OrderOutput & "<CR><ETX>" & SumOrder & "<CR><LF>" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
-
-            'Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & OrderOutput & "<CR><ETX>" & SumOrder & "<CR><LF>")
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-
-            Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
-
-            'Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>")
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-
-            EndTrasmission(Port)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine))
-            Me.Invoke(Sub() AppendText("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine))
-
-            'Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine)
-            CommWriter.WriteLine("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-
-            QueryStatus = False
-
-            PatientID_Out = ""
-            PatientName_Out = ""
-            PatientBDate_Out = ""
-            PatientSex_Out = ""
-
-            OrderSampleID_Out = ""
-            OrderTest_Out = ""
-
-            TestList.Clear()
-
-        Else
-            QueryStatus = False
-
-            Dim HeaderOutput As String
-            Dim Terminator As String
-
-            'Start sending <ENQ>---#############################################################################################################
-            'Send <ENQ> to Analyzer
-            Enquery(Port)
-            'Write Serial Data to Readable text
-            Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
-            Thread.Sleep(500)
-            'Read Serial Data to complete transaction
-            ReadDataASTM1 = ""
-            ReadDataASTM1 = Port.ReadExisting()
-            ReadDataASTM1 = Data_Converter(ReadDataASTM1)
-            'Write Serial Data to readable text
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
-            Thread.Sleep(1000)
-
-            '--Resend Packet if received <Nak>
-            If ReadDataASTM1 = "<NAK>" Then
-                'Write Header Packet to Serial Port (Port)
                 Enquery(Port)
                 Thread.Sleep(500)
-                'Write Serial Data to readable text sent by Host
                 Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
                 Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+                'Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine("******************************Start-Query-Request******************************" & vbNewLine)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine)
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
+                Thread.Sleep(500)
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+                'Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>")
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                Port.Write(STX & PatientOutput & CR & ETX & SumPatient & CR & LF)
+                Thread.Sleep(500)
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & PatientOutput & "<CR><ETX>" & SumPatient & "<CR><LF>" & vbNewLine))
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+                'Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & PatientOutput & "<CR><ETX>" & SumPatient & "<CR><LF>")
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                Port.Write(STX & OrderOutput & CR & ETX & SumOrder & CR & LF)
+                Thread.Sleep(500)
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & OrderOutput & "<CR><ETX>" & SumOrder & "<CR><LF>" & vbNewLine))
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+                'Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & OrderOutput & "<CR><ETX>" & SumOrder & "<CR><LF>")
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
+                Thread.Sleep(500)
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+                'Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>")
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                EndTrasmission(Port)
+                Thread.Sleep(500)
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine))
+                Me.Invoke(Sub() AppendText("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine))
+
+                'Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine)
+                CommWriter.WriteLine("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                QueryStatus = False
+
+                PatientID_Out = ""
+                PatientName_Out = ""
+                PatientBDate_Out = ""
+                PatientSex_Out = ""
+
+                OrderSampleID_Out = ""
+                OrderTest_Out = ""
+
+                TestList.Clear()
+            Else
+                QueryStatus = False
+
+                Dim HeaderOutput As String
+                Dim Terminator As String
+
+                'Start sending <ENQ>---#############################################################################################################
+                'Send <ENQ> to Analyzer
+                Enquery(Port)
+                'Write Serial Data to Readable text
+                Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
+                Thread.Sleep(500)
                 'Read Serial Data to complete transaction
                 ReadDataASTM1 = ""
                 ReadDataASTM1 = Port.ReadExisting()
                 ReadDataASTM1 = Data_Converter(ReadDataASTM1)
-                'Write Serial Data to readable text received from Analyzer
+                'Write Serial Data to readable text
                 Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
                 Thread.Sleep(1000)
-            End If
-            '--End If Statement
 
-            '--Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine("******************************Start-Query-Request******************************" & vbNewLine)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine)
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-            '---End Log File
-            '###################################################################################################################################
+                '--Resend Packet if received <Nak>
+                If ReadDataASTM1 = "<NAK>" Then
+                    'Write Header Packet to Serial Port (Port)
+                    Enquery(Port)
+                    Thread.Sleep(500)
+                    'Write Serial Data to readable text sent by Host
+                    Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
+                    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
+                    'Read Serial Data to complete transaction
+                    ReadDataASTM1 = ""
+                    ReadDataASTM1 = Port.ReadExisting()
+                    ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+                    'Write Serial Data to readable text received from Analyzer
+                    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+                    Thread.Sleep(1000)
+                End If
+                '--End If Statement
 
-            'Send Header Packet---##############################################################################################################
-            'Construct Header(H) Packet for sending
-            HeaderOutput = "1H|\^&|||SBSI LIS|||||||P|LIS2-A2|" & FormatDateRegex()
-            'Get the sum of packects as HEX value for checking
-            Dim SumHeader As String = CheckSum(HeaderOutput & CR & ETX)
-            'Write Header Packet to Serial Port (Port)
-            Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
-            Thread.Sleep(500)
-            'Write Serial Data to readable text sent by Host
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
-            'Read Serial Data to complete transaction
-            ReadDataASTM1 = ""
-            ReadDataASTM1 = Port.ReadExisting()
-            ReadDataASTM1 = Data_Converter(ReadDataASTM1)
-            'Write Serial Data to readable text received from Analyzer
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
-            Thread.Sleep(1000)
+                '--Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine("******************************Start-Query-Request******************************" & vbNewLine)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine)
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+                '---End Log File
+                '###################################################################################################################################
 
-            '--Resend Packet if received <Nak>
-            If ReadDataASTM1 = "<NAK>" Then
+                'Send Header Packet---##############################################################################################################
+                'Construct Header(H) Packet for sending
+                HeaderOutput = "1H|\^&|||SBSI LIS|||||||P|LIS2-A2|" & FormatDateRegex()
+                'Get the sum of packects as HEX value for checking
+                Dim SumHeader As String = CheckSum(HeaderOutput & CR & ETX)
                 'Write Header Packet to Serial Port (Port)
                 Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
                 Thread.Sleep(500)
@@ -1475,99 +1880,452 @@ Public Class MainForm
                 'Write Serial Data to readable text received from Analyzer
                 Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
                 Thread.Sleep(1000)
-            End If
-            '--End If Statement
 
-            '--Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>")
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-            '--End Log File
-            '###################################################################################################################################
+                '--Resend Packet if received <Nak>
+                If ReadDataASTM1 = "<NAK>" Then
+                    'Write Header Packet to Serial Port (Port)
+                    Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
+                    Thread.Sleep(500)
+                    'Write Serial Data to readable text sent by Host
+                    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
+                    'Read Serial Data to complete transaction
+                    ReadDataASTM1 = ""
+                    ReadDataASTM1 = Port.ReadExisting()
+                    ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+                    'Write Serial Data to readable text received from Analyzer
+                    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+                    Thread.Sleep(1000)
+                End If
+                '--End If Statement
 
-            'Send Terminator Packet
-            Terminator = "2L|1|I"
-            Dim SumTerminator As String = CheckSum(Terminator & CR & ETX)
+                '--Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>")
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+                '--End Log File
+                '###################################################################################################################################
 
-            Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
-            Thread.Sleep(500)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
+                'Send Terminator Packet
+                Terminator = "2L|1|I"
+                Dim SumTerminator As String = CheckSum(Terminator & CR & ETX)
 
-            ReadDataASTM1 = ""
-            ReadDataASTM1 = Port.ReadExisting()
-            ReadDataASTM1 = Data_Converter(ReadDataASTM1)
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
-            Thread.Sleep(1000)
-
-            If ReadDataASTM1 = "<NAK>" Then
                 Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
                 Thread.Sleep(500)
                 Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
 
                 ReadDataASTM1 = ""
                 ReadDataASTM1 = Port.ReadExisting()
+                ReadDataASTM1 = Data_Converter(ReadDataASTM1)
                 Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
                 Thread.Sleep(1000)
+
+                If ReadDataASTM1 = "<NAK>" Then
+                    Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
+                    Thread.Sleep(500)
+                    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
+
+                    ReadDataASTM1 = ""
+                    ReadDataASTM1 = Port.ReadExisting()
+                    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+                    Thread.Sleep(1000)
+                End If
+
+                '--Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>")
+                CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+                'End
+
+                'Send <EOT> to end transaction
+                EndTrasmission(Port)
+
+                Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine))
+                Me.Invoke(Sub() AppendText("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine))
+
+                '--Write file to TraceComm.Log
+                CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                CommWriter = New StreamWriter(CommLog)
+                CommWriter.WriteLine(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine)
+                CommWriter.WriteLine("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine)
+                CommWriter.Close()
+                CommLog.Close()
+
+                'QueryStatus = False
+
+                'ConnectionTimedOut(Port)
+                'Me.Invoke(Sub() AppendText("******************************Error-Communication*******************************" & vbNewLine & vbNewLine))
+                'Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <NAK>" & vbNewLine))
+                'Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : No-Sample-Found" & vbNewLine))
+                'Me.Invoke(Sub() AppendText("******************************End-of-Communication*******************************" & vbNewLine & vbNewLine))
+
+                ''Write file to TraceComm.Log
+                'CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+                'CommWriter = New StreamWriter(CommLog)
+                'CommWriter.WriteLine("******************************Error-Communication*******************************" & vbNewLine)
+                'CommWriter.WriteLine(System.DateTime.Now & " [Host] : <NAK>" & vbNewLine)
+                'CommWriter.WriteLine(System.DateTime.Now & " [Host] : No-Sample-Found" & vbNewLine)
+                'CommWriter.WriteLine("******************************End-of-Communication*******************************" & vbNewLine & vbNewLine)
+                'CommWriter.Close()
+                'CommLog.Close()
+                Thread.Sleep(2000)
             End If
 
-            '--Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>")
-            CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
-            'End
+        End Using
 
-            'Send <EOT> to end transaction
-            EndTrasmission(Port)
+        '######################
+        'rs.Parameters.Clear()
+        'rs.Parameters.AddWithValue("@SampleID", SampleID)
+        ''rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
 
-            Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine))
-            Me.Invoke(Sub() AppendText("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine))
+        'Connect()
+        'rs.Connection = conn
+        'rs.CommandText = "SELECT `tmpWorklist`.`sample_id`, `tmpWorklist`.`patient_id`, `tmpWorklist`.`patient_name`, `tmpWorklist`.`sex`, `tmpWorklist`.`bdate`, `patient_order`.`mode`,`tmpWorklist`.`testtype`,`tmpWorklist`.`sub_section` FROM `tmpWorklist`, `patient_order` WHERE `tmpWorklist`.`sample_id` = @SampleID AND `patient_order`.`sample_id` = @SampleID AND `tmpWorklist`.`status` IN ('Processing', 'Result Received') LIMIT 1"
+        'reader = rs.ExecuteReader
+        'reader.Read()
+        'If reader.HasRows Then
+        '    PatientID_Out = reader(1).ToString
+        '    PatientName_Out = Replace(reader(2).ToString, ", ", "^")
+        '    PatientBDate_Out = "" 'DateTime.ParseExact(reader(4), "MM/dd/yyyy", System.Globalization.CultureInfo.InvariantCulture).ToString("yyyyMMdd")
+        '    PatientSex_Out = reader(3).ToString.Substring(0, 1)
+        '    OrderSampleID_Out = reader(0).ToString
 
-            '--Write file to TraceComm.Log
-            CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            CommWriter = New StreamWriter(CommLog)
-            CommWriter.WriteLine(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine)
-            CommWriter.WriteLine("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine)
-            CommWriter.Close()
-            CommLog.Close()
+        '    'Section = reader(6).ToString
+        '    'SubSection = reader(7).ToString
+        '    Disconnect()
 
-            'QueryStatus = False
+        '    MainID = OrderSampleID_Out
 
-            'ConnectionTimedOut(Port)
-            'Me.Invoke(Sub() AppendText("******************************Error-Communication*******************************" & vbNewLine & vbNewLine))
-            'Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <NAK>" & vbNewLine))
-            'Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : No-Sample-Found" & vbNewLine))
-            'Me.Invoke(Sub() AppendText("******************************End-of-Communication*******************************" & vbNewLine & vbNewLine))
+        '    'Connect()
+        '    'rs.Connection = conn
+        '    'rs.CommandText = "SELECT `order_code` FROM `lis_order` WHERE `sample_id` = '" & MainID & "'"
+        '    'reader = rs.ExecuteReader
+        '    'While reader.Read
+        '    '    TestList.Add(reader(0).ToString)
+        '    'End While
+        '    'Disconnect()
 
-            ''Write file to TraceComm.Log
-            'CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-            'CommWriter = New StreamWriter(CommLog)
-            'CommWriter.WriteLine("******************************Error-Communication*******************************" & vbNewLine)
-            'CommWriter.WriteLine(System.DateTime.Now & " [Host] : <NAK>" & vbNewLine)
-            'CommWriter.WriteLine(System.DateTime.Now & " [Host] : No-Sample-Found" & vbNewLine)
-            'CommWriter.WriteLine("******************************End-of-Communication*******************************" & vbNewLine & vbNewLine)
-            'CommWriter.Close()
-            'CommLog.Close()
-            Thread.Sleep(2000)
-        End If
-        Disconnect()
+        '    Connect()
+        '    rs.Connection = conn
+        '    'rs.CommandText = "Select `test_code` FROM `tmpresult` WHERE `sample_id` = '" & MainID & "' AND section = '" & Section & "' AND sub_section = '" & SubSection & "'"
+        '    rs.CommandText = "Select `test_code` FROM `tmpresult` WHERE `sample_id` = '" & MainID & "'"
+        '    reader = rs.ExecuteReader
+        '    While reader.Read
+        '        TestList.Add(reader(0).ToString)
+        '    End While
+        '    Disconnect()
+
+        '    OrderTest_Out = ""
+        '    For Each a In TestList
+        '        Connect()
+        '        rs.Connection = conn
+        '        rs.Parameters.Clear()
+        '        rs.Parameters.AddWithValue("@instrument", Instrument & "_" & SerialNo)
+        '        rs.CommandText = "SELECT `channel` FROM `specimen` WHERE `test_code` = '" & a.ToString & "' AND `instrument` = @instrument AND `status` = 'Enable'"
+        '        reader = rs.ExecuteReader
+        '        reader.Read()
+        '        If reader.HasRows Then
+        '            'OrderTest_Out &= "^^^" & reader(0).ToString & "\"
+        '            ''OrderTest_Out &= "^^^" & a.ToString & "\"
+
+        '            Dim channel As String = $"^^^{reader(0).ToString()}\"
+        '            If Not OrderTest_Out.Contains(channel) Then
+        '                OrderTest_Out &= channel
+        '                'countOrderedTest += 1
+        '            End If
+        '        End If
+        '        Disconnect()
+        '    Next
+        '    TestList.Clear()
+
+        '    Dim HeaderOutput As String
+        '    Dim PatientOutput As String
+        '    Dim OrderOutput As String
+        '    Dim Terminator As String
+
+        '    'This part is for Yumizen H500/550 /Sending query to machine
+        '    HeaderOutput = "1H|\^&|||SBSI LIS|||||||P|E1394-97|" & FormatDateRegex()
+        '    PatientOutput = "2P|1||" & PatientID_Out & "||" & PatientName_Out & "||" & PatientBDate_Out & "|" & PatientSex_Out & "|||||"
+        '    'OrderOutput = "3O|1|" & OrderSampleID_Out & "||" & OrderTest_Out.TrimEnd("\") & "|R|" & FormatDateRegex() & "|||||N||||||||||||||Q|||||"
+        '    OrderOutput = "3O|1|" & OrderSampleID_Out & "||" & OrderTest_Out.TrimEnd("\") & "|R|" & FormatDateRegex() & "|||||A||||1|"
+        '    Terminator = "4L|1|"
+        '    'End
+
+        '    Dim SumHeader As String = CheckSum(HeaderOutput & CR & ETX)
+        '    Dim SumPatient As String = CheckSum(PatientOutput & CR & ETX)
+        '    Dim SumOrder As String = CheckSum(OrderOutput & CR & ETX)
+        '    Dim SumTerminator As String = CheckSum(Terminator & CR & ETX)
+
+        '    Enquery(Port)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+        '    'Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine("******************************Start-Query-Request******************************" & vbNewLine)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+        '    'Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>")
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    Port.Write(STX & PatientOutput & CR & ETX & SumPatient & CR & LF)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & PatientOutput & "<CR><ETX>" & SumPatient & "<CR><LF>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+        '    'Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & PatientOutput & "<CR><ETX>" & SumPatient & "<CR><LF>")
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    Port.Write(STX & OrderOutput & CR & ETX & SumOrder & CR & LF)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & OrderOutput & "<CR><ETX>" & SumOrder & "<CR><LF>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+        '    'Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & OrderOutput & "<CR><ETX>" & SumOrder & "<CR><LF>")
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine))
+
+        '    'Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>")
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : <ACK>" & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    EndTrasmission(Port)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine))
+
+        '    'Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine)
+        '    CommWriter.WriteLine("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    QueryStatus = False
+
+        '    PatientID_Out = ""
+        '    PatientName_Out = ""
+        '    PatientBDate_Out = ""
+        '    PatientSex_Out = ""
+
+        '    OrderSampleID_Out = ""
+        '    OrderTest_Out = ""
+
+        '    TestList.Clear()
+
+        'Else
+        '    QueryStatus = False
+
+        '    Dim HeaderOutput As String
+        '    Dim Terminator As String
+
+        '    'Start sending <ENQ>---#############################################################################################################
+        '    'Send <ENQ> to Analyzer
+        '    Enquery(Port)
+        '    'Write Serial Data to Readable text
+        '    Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
+        '    Thread.Sleep(500)
+        '    'Read Serial Data to complete transaction
+        '    ReadDataASTM1 = ""
+        '    ReadDataASTM1 = Port.ReadExisting()
+        '    ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+        '    'Write Serial Data to readable text
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+        '    Thread.Sleep(1000)
+
+        '    '--Resend Packet if received <Nak>
+        '    If ReadDataASTM1 = "<NAK>" Then
+        '        'Write Header Packet to Serial Port (Port)
+        '        Enquery(Port)
+        '        Thread.Sleep(500)
+        '        'Write Serial Data to readable text sent by Host
+        '        Me.Invoke(Sub() AppendText("******************************Start-Query-Request******************************" & vbNewLine))
+        '        Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine))
+        '        'Read Serial Data to complete transaction
+        '        ReadDataASTM1 = ""
+        '        ReadDataASTM1 = Port.ReadExisting()
+        '        ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+        '        'Write Serial Data to readable text received from Analyzer
+        '        Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+        '        Thread.Sleep(1000)
+        '    End If
+        '    '--End If Statement
+
+        '    '--Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine("******************************Start-Query-Request******************************" & vbNewLine)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <ENQ>" & vbNewLine)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+        '    '---End Log File
+        '    '###################################################################################################################################
+
+        '    'Send Header Packet---##############################################################################################################
+        '    'Construct Header(H) Packet for sending
+        '    HeaderOutput = "1H|\^&|||SBSI LIS|||||||P|LIS2-A2|" & FormatDateRegex()
+        '    'Get the sum of packects as HEX value for checking
+        '    Dim SumHeader As String = CheckSum(HeaderOutput & CR & ETX)
+        '    'Write Header Packet to Serial Port (Port)
+        '    Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
+        '    Thread.Sleep(500)
+        '    'Write Serial Data to readable text sent by Host
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
+        '    'Read Serial Data to complete transaction
+        '    ReadDataASTM1 = ""
+        '    ReadDataASTM1 = Port.ReadExisting()
+        '    ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+        '    'Write Serial Data to readable text received from Analyzer
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+        '    Thread.Sleep(1000)
+
+        '    '--Resend Packet if received <Nak>
+        '    If ReadDataASTM1 = "<NAK>" Then
+        '        'Write Header Packet to Serial Port (Port)
+        '        Port.Write(STX & HeaderOutput & CR & ETX & SumHeader & CR & LF)
+        '        Thread.Sleep(500)
+        '        'Write Serial Data to readable text sent by Host
+        '        Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>" & vbNewLine))
+        '        'Read Serial Data to complete transaction
+        '        ReadDataASTM1 = ""
+        '        ReadDataASTM1 = Port.ReadExisting()
+        '        ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+        '        'Write Serial Data to readable text received from Analyzer
+        '        Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+        '        Thread.Sleep(1000)
+        '    End If
+        '    '--End If Statement
+
+        '    '--Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & HeaderOutput & "<CR><ETX>" & SumHeader & "<CR><LF>")
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+        '    '--End Log File
+        '    '###################################################################################################################################
+
+        '    'Send Terminator Packet
+        '    Terminator = "2L|1|I"
+        '    Dim SumTerminator As String = CheckSum(Terminator & CR & ETX)
+
+        '    Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
+        '    Thread.Sleep(500)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
+
+        '    ReadDataASTM1 = ""
+        '    ReadDataASTM1 = Port.ReadExisting()
+        '    ReadDataASTM1 = Data_Converter(ReadDataASTM1)
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+        '    Thread.Sleep(1000)
+
+        '    If ReadDataASTM1 = "<NAK>" Then
+        '        Port.Write(STX & Terminator & CR & ETX & SumTerminator & CR & LF)
+        '        Thread.Sleep(500)
+        '        Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>" & vbNewLine))
+
+        '        ReadDataASTM1 = ""
+        '        ReadDataASTM1 = Port.ReadExisting()
+        '        Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine))
+        '        Thread.Sleep(1000)
+        '    End If
+
+        '    '--Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <STX>" & Terminator & "<CR><ETX>" & SumTerminator & "<CR><LF>")
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Machine] : " & ReadDataASTM1 & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+        '    'End
+
+        '    'Send <EOT> to end transaction
+        '    EndTrasmission(Port)
+
+        '    Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine))
+        '    Me.Invoke(Sub() AppendText("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine))
+
+        '    '--Write file to TraceComm.Log
+        '    CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    CommWriter = New StreamWriter(CommLog)
+        '    CommWriter.WriteLine(System.DateTime.Now & " [Host] : <EOT>" & vbNewLine)
+        '    CommWriter.WriteLine("******************************End-Query-Request*******************************" & vbNewLine & vbNewLine)
+        '    CommWriter.Close()
+        '    CommLog.Close()
+
+        '    'QueryStatus = False
+
+        '    'ConnectionTimedOut(Port)
+        '    'Me.Invoke(Sub() AppendText("******************************Error-Communication*******************************" & vbNewLine & vbNewLine))
+        '    'Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : <NAK>" & vbNewLine))
+        '    'Me.Invoke(Sub() AppendText(System.DateTime.Now & " [Host] : No-Sample-Found" & vbNewLine))
+        '    'Me.Invoke(Sub() AppendText("******************************End-of-Communication*******************************" & vbNewLine & vbNewLine))
+
+        '    ''Write file to TraceComm.Log
+        '    'CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+        '    'CommWriter = New StreamWriter(CommLog)
+        '    'CommWriter.WriteLine("******************************Error-Communication*******************************" & vbNewLine)
+        '    'CommWriter.WriteLine(System.DateTime.Now & " [Host] : <NAK>" & vbNewLine)
+        '    'CommWriter.WriteLine(System.DateTime.Now & " [Host] : No-Sample-Found" & vbNewLine)
+        '    'CommWriter.WriteLine("******************************End-of-Communication*******************************" & vbNewLine & vbNewLine)
+        '    'CommWriter.Close()
+        '    'CommLog.Close()
+        '    Thread.Sleep(2000)
+        'End If
+        'Disconnect()
     End Sub
 
     Public Sub ExitMessage()
-        CommLog = New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
-        CommWriter = New StreamWriter(CommLog)
-
-        CommWriter.WriteLine("Application Closed: " + System.DateTime.Now.ToString())
-        CommWriter.WriteLine("Port: " + ComPortsBox.Text)
-        CommWriter.WriteLine("Machine: " + Instrument + vbNewLine)
-
-        CommWriter.Close()
-        CommLog.Close()
+        Using CommLog As New FileStream(TraceComm, FileMode.Append, FileAccess.Write)
+            Using CommWriter As New StreamWriter(CommLog)
+                CommWriter.WriteLine("Application Closed: " + System.DateTime.Now.ToString())
+                CommWriter.WriteLine("Port: " + ComPortsBox.Text)
+                CommWriter.WriteLine("Machine: " + Instrument + vbNewLine)
+            End Using
+        End Using
     End Sub
 
     Private Sub btnDisconnect_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnDisconnect.Click
@@ -1576,27 +2334,52 @@ Public Class MainForm
             ExitMessage()
             lblConnection.Text = "Connection Status: Disconnected"
 
+
             'Get Connection String value from Registry
             Dim TXTConnectionString As String = My.Computer.Registry.GetValue("HKEY_CURRENT_USER\Software\KeyString\CS 1.0.0", "ConnectionString", Nothing)
             '#########################################################################################################################################################
 
             'Update Machine Status
-            conn.ConnectionString = TXTConnectionString
-            conn.Open()
-            rs.Connection = conn
-            rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-            reader = rs.ExecuteReader
-            reader.Read()
-            If reader.HasRows Then
-                conn.Close()
-                conn.ConnectionString = TXTConnectionString
+            Using conn As New MySqlConnection(My.Settings.ConnectionString)
                 conn.Open()
-                rs.Connection = conn
-                rs.CommandText = "UPDATE `machines` SET `status` = 'Disconnected' WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-                rs.ExecuteNonQuery()
-                conn.Close()
-            End If
-            conn.Close()
+                Dim hasrow As Object
+                Using cmd As New MySqlCommand()
+                    cmd.Connection = conn
+                    cmd.CommandText = "SELECT * FROM `machines` WHERE `name` = @name AND `serial_no` = @serial"
+                    cmd.CommandType = CommandType.Text
+                    cmd.Parameters.AddWithValue("@name", txtMachine.Text)
+                    cmd.Parameters.AddWithValue("@serial", txtSerial.Text)
+                    hasrow = cmd.ExecuteScalar()
+                End Using
+
+                If hasrow IsNot DBNull.Value Then
+                    Using cmd As New MySqlCommand()
+                        cmd.Connection = conn
+                        cmd.CommandText = "UPDATE `machines` SET `status` = 'Disconnected' WHERE `name` = @name AND `serial_no` = @serial"
+                        cmd.CommandType = CommandType.Text
+                        cmd.Parameters.AddWithValue("@name", txtMachine.Text)
+                        cmd.Parameters.AddWithValue("@serial", txtSerial.Text)
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End If
+            End Using
+
+            'conn.ConnectionString = TXTConnectionString
+            'conn.Open()
+            'rs.Connection = conn
+            'rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+            'reader = rs.ExecuteReader
+            'reader.Read()
+            'If reader.HasRows Then
+            '    conn.Close()
+            '    conn.ConnectionString = TXTConnectionString
+            '    conn.Open()
+            '    rs.Connection = conn
+            '    rs.CommandText = "UPDATE `machines` SET `status` = 'Disconnected' WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+            '    rs.ExecuteNonQuery()
+            '    conn.Close()
+            'End If
+            'conn.Close()
             '############################################################################################################################################################
 
         End If
@@ -1616,22 +2399,45 @@ Public Class MainForm
             '#########################################################################################################################################################
 
             'Update Machine Status
-            conn.ConnectionString = TXTConnectionString
-            conn.Open()
-            rs.Connection = conn
-            rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-            reader = rs.ExecuteReader
-            reader.Read()
-            If reader.HasRows Then
-                conn.Close()
-                conn.ConnectionString = TXTConnectionString
+            Using conn As New MySqlConnection(My.Settings.ConnectionString)
                 conn.Open()
-                rs.Connection = conn
-                rs.CommandText = "UPDATE `machines` SET `status` = 'Connected' WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
-                rs.ExecuteNonQuery()
-                conn.Close()
-            End If
-            conn.Close()
+                Dim hasrow As Object
+                Using cmd As New MySqlCommand()
+                    cmd.Connection = conn
+                    cmd.CommandText = "SELECT * FROM `machines` WHERE `name` = @name AND `serial_no` = @serial"
+                    cmd.CommandType = CommandType.Text
+                    cmd.Parameters.AddWithValue("@name", txtMachine.Text)
+                    cmd.Parameters.AddWithValue("@serial", txtSerial.Text)
+                    hasrow = cmd.ExecuteScalar()
+                End Using
+
+                If hasrow IsNot DBNull.Value Then
+                    Using cmd As New MySqlCommand()
+                        cmd.Connection = conn
+                        cmd.CommandText = "UPDATE `machines` SET `status` = 'Connected' WHERE `name` = @name AND `serial_no` = @serial"
+                        cmd.CommandType = CommandType.Text
+                        cmd.Parameters.AddWithValue("@name", txtMachine.Text)
+                        cmd.Parameters.AddWithValue("@serial", txtSerial.Text)
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End If
+            End Using
+            'conn.ConnectionString = TXTConnectionString
+            'conn.Open()
+            'rs.Connection = conn
+            'rs.CommandText = "SELECT * FROM `machines` WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+            'reader = rs.ExecuteReader
+            'reader.Read()
+            'If reader.HasRows Then
+            '    conn.Close()
+            '    conn.ConnectionString = TXTConnectionString
+            '    conn.Open()
+            '    rs.Connection = conn
+            '    rs.CommandText = "UPDATE `machines` SET `status` = 'Connected' WHERE `name` = '" & txtMachine.Text & "' AND `serial_no` = '" & txtSerial.Text & "'"
+            '    rs.ExecuteNonQuery()
+            '    conn.Close()
+            'End If
+            'conn.Close()
             '############################################################################################################################################################
         End If
     End Sub

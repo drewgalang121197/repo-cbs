@@ -174,7 +174,7 @@ Partial Class MainForm
         Me.chkReceiving.CheckState = System.Windows.Forms.CheckState.Checked
         Me.chkReceiving.Location = New System.Drawing.Point(122, 124)
         Me.chkReceiving.Name = "chkReceiving"
-        Me.chkReceiving.Size = New System.Drawing.Size(151, 17)
+        Me.chkReceiving.Size = New System.Drawing.Size(150, 17)
         Me.chkReceiving.TabIndex = 133
         Me.chkReceiving.Text = "Enable Two Way Process"
         Me.chkReceiving.UseVisualStyleBackColor = True
@@ -209,7 +209,7 @@ Partial Class MainForm
         Me.LabelControl8.LookAndFeel.SkinName = "Visual Studio 2013 Blue"
         Me.LabelControl8.LookAndFeel.UseDefaultLookAndFeel = False
         Me.LabelControl8.Name = "LabelControl8"
-        Me.LabelControl8.Size = New System.Drawing.Size(49, 13)
+        Me.LabelControl8.Size = New System.Drawing.Size(50, 13)
         Me.LabelControl8.TabIndex = 122
         Me.LabelControl8.Text = "Baudrate:"
         '
@@ -221,7 +221,7 @@ Partial Class MainForm
         Me.LabelControl9.LookAndFeel.SkinName = "Visual Studio 2013 Blue"
         Me.LabelControl9.LookAndFeel.UseDefaultLookAndFeel = False
         Me.LabelControl9.Name = "LabelControl9"
-        Me.LabelControl9.Size = New System.Drawing.Size(48, 13)
+        Me.LabelControl9.Size = New System.Drawing.Size(49, 13)
         Me.LabelControl9.TabIndex = 123
         Me.LabelControl9.Text = "Data Bits:"
         '
@@ -233,7 +233,7 @@ Partial Class MainForm
         Me.LabelControl10.LookAndFeel.SkinName = "Visual Studio 2013 Blue"
         Me.LabelControl10.LookAndFeel.UseDefaultLookAndFeel = False
         Me.LabelControl10.Name = "LabelControl10"
-        Me.LabelControl10.Size = New System.Drawing.Size(48, 13)
+        Me.LabelControl10.Size = New System.Drawing.Size(49, 13)
         Me.LabelControl10.TabIndex = 121
         Me.LabelControl10.Text = "Stop Bits:"
         '
@@ -594,6 +594,7 @@ Partial Class MainForm
         Me.MaximizeBox = False
         Me.Name = "MainForm"
         Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
+        Me.Text = "PentraC400"
         Me.WindowState = System.Windows.Forms.FormWindowState.Minimized
         Me.mnuStrip.ResumeLayout(False)
         CType(Me.tbRSSettings, System.ComponentModel.ISupportInitialize).EndInit()
