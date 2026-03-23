@@ -324,9 +324,9 @@ Namespace My
     Friend Module MySettingsProperty
         
         <Global.System.ComponentModel.Design.HelpKeywordAttribute("My.Settings")>  _
-        Friend ReadOnly Property Settings() As Global.PentraC400.My.MySettings
+        Friend ReadOnly Property Settings() As Global.CBS.My.MySettings
             Get
-                Return Global.PentraC400.My.MySettings.Default
+                Return Global.CBS.My.MySettings.Default
             End Get
         End Property
     End Module
