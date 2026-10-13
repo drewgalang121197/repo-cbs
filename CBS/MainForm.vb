@@ -614,12 +614,12 @@ Public Class MainForm
 
     Private Sub Form1_Resize(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Resize
         If Me.WindowState = FormWindowState.Minimized Then
+            NotifyIcon1.Text = txtMachine.Text & " (" & ComPortsBox.Text & ")"
             NotifyIcon1.Visible = True
             NotifyIcon1.BalloonTipIcon = ToolTipIcon.Info
-            NotifyIcon1.BalloonTipTitle = txtMachine.Text & " (" & ComPortsBox.Text & ") " & "Communication"
+            NotifyIcon1.BalloonTipTitle = txtMachine.Text & " (" & ComPortsBox.Text & ") Communication"
             NotifyIcon1.BalloonTipText = "Do not close this application!"
-            'NotifyIcon1.ShowBalloonTip(5000)
-            'Me.Hide()
+            'NotifyIcon1.ShowBalloonTip(3000)
             ShowInTaskbar = False
         End If
     End Sub
@@ -697,15 +697,9 @@ Public Class MainForm
 
                     If hasrow Then
                         'Update existing machine record
-                        Using updtmachine As New MySqlCommand("UPDATE machines SET
-                                                                    name = @name,
-                                                                    test_name = @testname,
-                                                                    serial_no = @serialno,
-                                                                    com_port = @comport,
-                                                                    baud_rate = @baudrate,
-                                                                    status = @status,
-                                                                    location = @location
-                                                                    WHERE name = @name AND serial_no = @serialno", conn)
+                        Using updtmachine As New MySqlCommand("UPDATE machines 
+                                                                SET name = @name, test_name = @testname, serial_no = @serialno, com_port = @comport, baud_rate = @baudrate, status = @status, location = @location
+                                                                WHERE name = @name AND serial_no = @serialno", conn)
                             With updtmachine
                                 .Parameters.AddWithValue("@name", txtMachine.Text)
                                 .Parameters.AddWithValue("@testname", "")
